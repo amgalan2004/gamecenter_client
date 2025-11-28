@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import Header from "../../components/ui/Header";
 import BookingModal from "./components/BookingModal";
-import CenterListSidebar from "./components/CenterListSidebar";
 import MapContainer from "./components/MapContainer";
 
 const DEFAULT_LOCATION = { lat: 47.918873, lng: 106.917701 };
@@ -14,9 +13,8 @@ const GamingCenterMap = () => {
   const [gamingCenters, setGamingCenters] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [isSidebarVisible, setIsSidebarVisible] = useState(true);
 
-  // ✅ Game centers татах
+  // Төвүүд татах
   useEffect(() => {
     const fetchCenters = async () => {
       try {
@@ -45,7 +43,7 @@ const GamingCenterMap = () => {
           );
         }
       } catch (err) {
-        console.error("❌ Centers fetch failed:", err);
+        console.error("Centers fetch failed:", err);
         setError("Төвүүдийн мэдээлэл татахад алдаа гарлаа.");
       } finally {
         setLoading(false);
@@ -55,7 +53,7 @@ const GamingCenterMap = () => {
     fetchCenters();
   }, []);
 
-  // ✅ Хэрэглэгчийн байршил авах
+  // Хэрэглэгчийн байршил авах
   useEffect(() => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
@@ -77,12 +75,14 @@ const GamingCenterMap = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#f9fafb] text-gray-900 flex flex-col">
+    <div className="min-h-screen bg-[#f4f6fa] text-gray-900 flex flex-col">
       <Header />
 
-      <main className="flex-1 flex flex-col lg:flex-row pt-16 overflow-hidden bg-[#f5f7fb]">
-        {/* 🧱 Зүүн хэсэг — Game centers grid */}
-        <div className="flex-1 px-8 py-6 overflow-y-auto bg-white border-r border-gray-200 shadow-sm">
+      <main className="flex-1 flex flex-col lg:flex-row pt-16 overflow-hidden">
+        {/* Зүүн тал — Лист */}
+        <div className="flex-1 px-6 py-6 overflow-y-auto bg-white border-r border-gray-200">
+
+          {/* Төвүүдийн Grid */}
           {loading ? (
             <p className="text-center text-gray-400 mt-20">
               Төвүүдийг ачаалж байна...
@@ -94,12 +94,12 @@ const GamingCenterMap = () => {
               Төвүүдийн мэдээлэл олдсонгүй...
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-7">
               {gamingCenters.map((center) => (
                 <div
                   key={center.id}
                   onClick={() => setSelectedCenter(center)}
-                  className={`rounded-2xl bg-white shadow hover:shadow-lg transition overflow-hidden border cursor-pointer ${
+                  className={`rounded-2xl bg-white shadow-sm hover:shadow-xl transition-all overflow-hidden border cursor-pointer duration-200 ${
                     selectedCenter?.id === center.id
                       ? "border-blue-500 ring-1 ring-blue-300"
                       : "border-gray-100"
@@ -110,24 +110,26 @@ const GamingCenterMap = () => {
                     alt={center.name}
                     className="w-full h-44 object-cover"
                   />
-                  <div className="p-4">
+
+                  <div className="p-4 space-y-1.5">
                     <div className="flex justify-between items-center">
-                      <h3 className="font-semibold text-lg text-gray-800 truncate">
+                      <h3 className="font-semibold text-base text-gray-900 truncate">
                         {center.name}
                       </h3>
                       <span className="text-sm text-yellow-500">
-                        ⭐ {center.rating.toFixed(1)}
+                        ★ {center.rating.toFixed(1)}
                       </span>
                     </div>
 
-                    <p className="text-gray-500 text-sm mt-1 truncate">
+                    <p className="text-sm text-gray-400 truncate">
                       📍 {center.address}
                     </p>
-                    <p className="text-blue-600 font-semibold mt-2">
-                      ₮{center.hourlyRate.toLocaleString()} /цаг
+
+                    <p className="text-blue-600 font-semibold">
+                      ₮{center.hourlyRate.toLocaleString()} / цаг
                     </p>
 
-                    <div className="flex justify-between items-center mt-3">
+                    <div className="flex justify-between items-center pt-2">
                       <span className="text-sm text-gray-400">
                         💻 {center.totalPCs} PC
                       </span>
@@ -136,7 +138,7 @@ const GamingCenterMap = () => {
                           e.stopPropagation();
                           handleBookingClick(center);
                         }}
-                        className="bg-blue-600 text-white text-sm px-4 py-2 rounded-lg hover:bg-blue-700 transition"
+                        className="bg-blue-600 text-white text-xs px-4 py-2 rounded-lg hover:bg-blue-700 transition"
                       >
                         Захиалах
                       </button>
@@ -148,9 +150,9 @@ const GamingCenterMap = () => {
           )}
         </div>
 
-        {/* 🌍 Баруун хэсэг — Газрын зураг */}
-        <div className="w-full lg:w-[38%] h-[60vh] lg:h-auto lg:sticky lg:top-16 p-4 bg-[#f5f7fb] border-l border-gray-200">
-          <div className="w-full h-full rounded-3xl overflow-hidden shadow-lg border border-gray-200 bg-white">
+        {/* Баруун тал — Map */}
+        <div className="w-full lg:w-[38%] h-[60vh] lg:h-auto lg:sticky lg:top-20 p-4 bg-[#f4f6fa] border-l border-gray-200">
+          <div className="w-full h-full rounded-3xl bg-white shadow-lg border border-gray-200 overflow-hidden">
             <MapContainer
               gamingCenters={gamingCenters}
               userLocation={userLocation}
@@ -160,16 +162,16 @@ const GamingCenterMap = () => {
             />
           </div>
 
-          {/* 🔘 Газрын зураг хаах товч */}
-          <div className="flex justify-center mt-3">
-            <button className="bg-blue-600 text-white text-sm px-5 py-2 rounded-full hover:bg-blue-700 shadow transition">
+          {/* Газрын зураг хаах товч (зөвхөн мобайлд хэрэгтэй) */}
+          <div className="flex justify-center mt-4 lg:hidden">
+            <button className="bg-blue-600 text-white text-sm px-5 py-2 rounded-full hover:bg-blue-700 shadow">
               Газрын зургийг хаах →
             </button>
           </div>
         </div>
       </main>
 
-      {/* 🗓️ Захиалгын модал */}
+      {/* Захиалгын модал */}
       <BookingModal
         center={bookingCenter}
         isOpen={isBookingModalOpen}
