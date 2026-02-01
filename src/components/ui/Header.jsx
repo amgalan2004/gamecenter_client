@@ -3,49 +3,127 @@ import { useLocation, useNavigate } from "react-router-dom";
 import Icon from "../AppIcon";
 import Button from "./Button";
 import LanguageSwitcher from "../LanguageSwitcher";
-import { t } from "../../utils/i18n";
+
+const API_URL = "http://localhost:5000";
+
+// ---- token helper ----
+const getAuthToken = () => {
+  try {
+    const direct =
+      localStorage.getItem("token") ||
+      localStorage.getItem("authToken") ||
+      localStorage.getItem("accessToken") ||
+      localStorage.getItem("gc_token");
+
+    if (direct) return direct;
+
+    const candidates = ["userData", "user", "gc_user", "currentUser"];
+    for (const key of candidates) {
+      const raw = localStorage.getItem(key);
+      if (!raw) continue;
+      try {
+        const obj = JSON.parse(raw);
+        if (obj.token) return obj.token;
+        if (obj.accessToken) return obj.accessToken;
+      } catch {}
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+};
 
 const Header = () => {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
-  const [activeBooking, setActiveBooking] = useState(null);
   const [notifications, setNotifications] = useState([
-    { id: 1, type: "booking", message: "Booking confirmed for Gaming Zone Alpha", time: "2 min ago", read: false },
-    { id: 2, type: "wallet", message: "Wallet topped up with ₮25,000", time: "1 hour ago", read: false },
-    { id: 3, type: "availability", message: "New seats available at CyberArena", time: "3 hours ago", read: true },
+    {
+      id: 1,
+      type: "booking",
+      message: "Booking confirmed for Gaming Zone Alpha",
+      time: "2 min ago",
+      read: false,
+    },
+    {
+      id: 2,
+      type: "wallet",
+      message: "Wallet topped up with ₮25,000",
+      time: "1 hour ago",
+      read: false,
+    },
+    {
+      id: 3,
+      type: "availability",
+      message: "New seats available at CyberArena",
+      time: "3 hours ago",
+      read: true,
+    },
   ]);
 
   const [user, setUser] = useState(null);
+
+  // ✅ Header дээрх баланс
+  const [headerBalance, setHeaderBalance] = useState(null); // null = loading
+  const [balanceError, setBalanceError] = useState("");
+
   const userMenuRef = useRef(null);
   const notificationRef = useRef(null);
   const location = useLocation();
   const navigate = useNavigate();
 
-  // 🧠 LocalStorage-с хэрэглэгчийн мэдээлэл авах
+  const token = getAuthToken();
+
+  // LocalStorage-оос хэрэглэгч авах
   useEffect(() => {
     const storedUser = localStorage.getItem("userData");
     if (storedUser) {
-      setUser(JSON.parse(storedUser));
+      try {
+        setUser(JSON.parse(storedUser));
+      } catch {
+        setUser(null);
+      }
     }
   }, []);
 
-  // ✅ Хэрэглэгчийн нэр тодорхойлох
+  // ✅ Wallet balance татах (header дээр харуулах)
+  useEffect(() => {
+    const controller = new AbortController();
+
+    const fetchHeaderBalance = async () => {
+      try {
+        setBalanceError("");
+
+        if (!token) {
+          setHeaderBalance(null);
+          return;
+        }
+
+        const res = await fetch(`${API_URL}/api/wallet/me`, {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: controller.signal,
+        });
+
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data.error) {
+          throw new Error(data.error || "Wallet error");
+        }
+
+        const bal = Number(data.wallet?.balance || 0);
+        setHeaderBalance(bal);
+      } catch (e) {
+        if (e?.name === "AbortError") return;
+        setHeaderBalance(0);
+        setBalanceError(e?.message || "Wallet error");
+      }
+    };
+
+    fetchHeaderBalance();
+    return () => controller.abort();
+  }, [token]);
+
   const displayName =
     user?.username || user?.name || user?.email?.split("@")[0] || "User";
-
-  // 💬 Mock active booking (жишээ)
-  useEffect(() => {
-    if (location?.pathname === "/gaming-center-details") {
-      setActiveBooking({
-        center: "CyberArena Downtown",
-        time: "2:00 PM - 4:00 PM",
-        seats: 2,
-        total: 24000,
-      });
-    } else {
-      setActiveBooking(null);
-    }
-  }, [location?.pathname]);
 
   const navigationItems = [
     { label: "Discover", path: "/gaming-center-map", icon: "MapPin" },
@@ -53,14 +131,17 @@ const Header = () => {
     { label: "Wallet", path: "/digital-wallet", icon: "Wallet" },
   ];
 
-  const unreadCount = notifications?.filter((n) => !n?.read)?.length;
+  const unreadCount = notifications.filter((n) => !n.read).length;
 
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (userMenuRef.current && !userMenuRef.current.contains(event.target)) {
         setIsUserMenuOpen(false);
       }
-      if (notificationRef.current && !notificationRef.current.contains(event.target)) {
+      if (
+        notificationRef.current &&
+        !notificationRef.current.contains(event.target)
+      ) {
         setIsNotificationOpen(false);
       }
     };
@@ -71,8 +152,17 @@ const Header = () => {
   const handleNavigation = (path) => navigate(path);
 
   const handleLogout = () => {
+    // ✅ бүх боломжит token-уудыг цэвэрлэ
     localStorage.removeItem("gc_token");
+    localStorage.removeItem("token");
+    localStorage.removeItem("authToken");
+    localStorage.removeItem("accessToken");
+
     localStorage.removeItem("userData");
+    localStorage.removeItem("user");
+    localStorage.removeItem("gc_user");
+    localStorage.removeItem("currentUser");
+
     navigate("/login");
     setIsUserMenuOpen(false);
   };
@@ -85,96 +175,113 @@ const Header = () => {
 
   const clearAllNotifications = () => setNotifications([]);
 
-  const completeBooking = () => {
-    navigate("/booking-history");
-    setActiveBooking(null);
-  };
-
-  const modifyBooking = () => navigate("/gaming-center-details");
+  const balanceText =
+    headerBalance === null ? "..." : `₮${headerBalance.toLocaleString()}`;
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-1000 bg-background border-b border-border">
-      <div className="flex items-center justify-between h-16 px-6">
-        {/* 🎮 Logo */}
-        <div
-          className="flex items-center space-x-2 cursor-pointer"
+    <header className="fixed top-0 left-0 right-0 z-40 bg-background/80 backdrop-blur border-b border-border">
+      <div className="max-w-6xl mx-auto flex h-16 items-center justify-between px-4 sm:px-6">
+        {/* LOGO */}
+        <button
+          type="button"
           onClick={() => navigate("/")}
+          className="flex items-center gap-2 focus:outline-none"
         >
-          <div className="w-8 h-8 bg-gradient-to-br from-primary to-accent rounded-lg flex items-center justify-center">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-accent shadow-sm">
             <Icon name="Gamepad2" size={20} color="white" />
           </div>
-          <span className="text-xl font-bold text-foreground">
+          <span className="hidden sm:block text-lg font-semibold tracking-tight text-foreground">
             GameCenter Connect
           </span>
-        </div>
+        </button>
 
-        {/* 🔗 Navigation */}
-        <nav className="hidden md:flex items-center space-x-8">
-          {navigationItems.map((item) => (
-            <button
-              key={item.path}
-              onClick={() => handleNavigation(item.path)}
-              className={`flex items-center space-x-2 px-3 py-2 rounded-lg transition ${
-                location.pathname === item.path
-                  ? "text-accent bg-accent/10"
-                  : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
-              }`}
-            >
-              <Icon name={item.icon} size={18} />
-              <span className="font-medium">{item.label}</span>
-            </button>
-          ))}
+        {/* NAV – desktop */}
+        <nav className="hidden md:flex items-center">
+          <div className="flex items-center gap-1 rounded-full bg-muted/40 px-1 py-1">
+            {navigationItems.map((item) => {
+              const active = location.pathname === item.path;
+              return (
+                <button
+                  key={item.path}
+                  onClick={() => handleNavigation(item.path)}
+                  className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition
+                    ${
+                      active
+                        ? "bg-black text-white shadow-sm"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                    }
+                  `}
+                >
+                  <Icon name={item.icon} size={16} />
+                  <span>{item.label}</span>
+                </button>
+              );
+            })}
+          </div>
         </nav>
 
-        {/* ⚙️ Right Section */}
-        <div className="flex items-center space-x-4">
-          <div className="hidden lg:flex items-center space-x-4">
+        {/* RIGHT SIDE */}
+        <div className="flex items-center gap-3">
+          <div className="hidden lg:block">
             <LanguageSwitcher />
           </div>
 
-          {/* 💬 Notifications */}
+          {/* NOTIFICATIONS */}
           <div className="relative" ref={notificationRef}>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setIsNotificationOpen(!isNotificationOpen)}
+            <button
+              type="button"
+              onClick={() => setIsNotificationOpen((v) => !v)}
+              className="relative inline-flex h-9 w-9 items-center justify-center rounded-full border border-border/70 bg-background hover:bg-muted/60 transition"
             >
-              <Icon name="Bell" size={20} />
+              <Icon name="Bell" size={18} />
               {unreadCount > 0 && (
-                <span className="absolute -top-1 -right-1 w-5 h-5 bg-error text-white text-xs font-medium rounded-full flex items-center justify-center">
+                <span className="absolute -top-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-semibold text-white">
                   {unreadCount}
                 </span>
               )}
-            </Button>
+            </button>
 
             {isNotificationOpen && (
-              <div className="absolute right-0 top-12 w-80 bg-popover border border-border rounded-lg shadow-lg animate-fade-in">
-                <div className="p-4 border-b border-border flex justify-between items-center">
-                  <h3 className="font-semibold text-foreground">Notifications</h3>
+              <div className="absolute right-0 top-11 w-80 rounded-xl border border-border bg-popover shadow-lg">
+                <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
+                  <span className="text-sm font-semibold text-foreground">
+                    Notifications
+                  </span>
                   {notifications.length > 0 && (
-                    <Button variant="ghost" size="xs" onClick={clearAllNotifications}>
+                    <button
+                      type="button"
+                      onClick={clearAllNotifications}
+                      className="text-xs text-muted-foreground hover:text-foreground"
+                    >
                       Clear all
-                    </Button>
+                    </button>
                   )}
                 </div>
                 <div className="max-h-64 overflow-y-auto">
                   {notifications.length === 0 ? (
-                    <div className="p-4 text-center text-muted-foreground">
-                      <Icon name="Bell" size={24} className="mx-auto mb-2 opacity-50" />
-                      <p className="text-sm">No notifications</p>
+                    <div className="px-4 py-6 text-center text-xs text-muted-foreground">
+                      <Icon
+                        name="Bell"
+                        size={22}
+                        className="mx-auto mb-2 opacity-40"
+                      />
+                      No notifications
                     </div>
                   ) : (
                     notifications.map((n) => (
-                      <div
+                      <button
                         key={n.id}
-                        className={`p-4 border-b last:border-b-0 cursor-pointer ${
-                          !n.read ? "bg-accent/5" : "hover:bg-muted/30"
-                        }`}
+                        type="button"
                         onClick={() => markNotificationAsRead(n.id)}
+                        className={`w-full px-4 py-3 text-left text-xs transition ${
+                          !n.read ? "bg-accent/5" : "hover:bg-muted/40"
+                        }`}
                       >
-                        <p className="text-sm text-foreground">{n.message}</p>
-                        <p className="text-xs text-muted-foreground mt-1">{n.time}</p>
-                      </div>
+                        <p className="text-foreground">{n.message}</p>
+                        <p className="mt-0.5 text-[11px] text-muted-foreground">
+                          {n.time}
+                        </p>
+                      </button>
                     ))
                   )}
                 </div>
@@ -182,62 +289,64 @@ const Header = () => {
             )}
           </div>
 
-          {/* 👤 User Profile */}
+          {/* USER */}
           <div className="relative" ref={userMenuRef}>
-            <Button
-              variant="ghost"
-              onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-              className="flex items-center space-x-2 px-3 py-2"
+            <button
+              type="button"
+              onClick={() => setIsUserMenuOpen((v) => !v)}
+              className="flex items-center gap-2 rounded-full border border-border/70 bg-background px-2 py-1.5 hover:bg-muted/60 transition"
             >
-              <div className="w-8 h-8 bg-gradient-to-br from-primary to-accent rounded-full flex items-center justify-center">
-                <span className="text-sm font-semibold text-white">
-                  {displayName[0]?.toUpperCase() || "?"}
-                </span>
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-primary to-accent text-xs font-semibold text-white">
+                {displayName[0]?.toUpperCase() || "?"}
               </div>
-              <div className="hidden md:block text-left">
-                <div className="text-sm font-medium text-foreground">
+              <div className="hidden md:flex flex-col items-start">
+                <span className="text-xs font-medium leading-none text-foreground">
                   {displayName}
-                </div>
-                <div className="text-xs text-muted-foreground font-mono">
-                  ₮{user?.balance?.toLocaleString() || "0"}
-                </div>
+                </span>
+                <span className="text-[11px] font-mono text-muted-foreground">
+                  {balanceText}
+                </span>
               </div>
               <Icon
                 name="ChevronDown"
-                size={16}
-                className={`transition-transform ${
+                size={14}
+                className={`hidden md:block transition-transform ${
                   isUserMenuOpen ? "rotate-180" : ""
                 }`}
               />
-            </Button>
+            </button>
 
             {isUserMenuOpen && (
-              <div className="absolute right-0 top-12 w-64 bg-popover border border-border rounded-lg shadow-lg animate-fade-in">
-                <div className="p-4 border-b border-border">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-12 h-12 bg-gradient-to-br from-primary to-accent rounded-full flex items-center justify-center">
-                      <span className="text-lg font-semibold text-white">
-                        {displayName.slice(0, 2).toUpperCase()}
-                      </span>
+              <div className="absolute right-0 top-11 w-64 rounded-xl border border-border bg-popover shadow-lg">
+                <div className="border-b border-border px-4 py-3">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-primary to-accent text-sm font-semibold text-white">
+                      {displayName.slice(0, 2).toUpperCase()}
                     </div>
-                    <div>
-                      <div className="font-medium text-foreground">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-foreground">
                         {displayName}
-                      </div>
-                      <div className="text-sm text-muted-foreground">
+                      </p>
+                      <p className="truncate text-xs text-muted-foreground">
                         {user?.email || "—"}
-                      </div>
-                      <div className="text-sm font-mono text-success">
-                        Balance: ₮{user?.balance?.toLocaleString() || "0"}
-                      </div>
+                      </p>
+                      <p className="mt-0.5 text-xs font-mono text-success">
+                        Balance: {balanceText}
+                      </p>
+                      {balanceError && (
+                        <p className="mt-1 text-[11px] text-red-300 truncate">
+                          {balanceError}
+                        </p>
+                      )}
                     </div>
                   </div>
                 </div>
-                <div className="p-2">
+
+                <div className="px-2 py-1">
                   <Button
                     variant="ghost"
                     onClick={() => handleNavigation("/digital-wallet")}
-                    className="w-full justify-start"
+                    className="w-full justify-start text-sm"
                     iconName="Wallet"
                   >
                     Manage Wallet
@@ -245,16 +354,16 @@ const Header = () => {
                   <Button
                     variant="ghost"
                     onClick={() => handleNavigation("/booking-history")}
-                    className="w-full justify-start"
+                    className="w-full justify-start text-sm"
                     iconName="History"
                   >
                     Booking History
                   </Button>
-                  <div className="border-t border-border my-2"></div>
+                  <div className="my-1 border-t border-border" />
                   <Button
                     variant="ghost"
                     onClick={handleLogout}
-                    className="w-full justify-start text-destructive"
+                    className="w-full justify-start text-sm text-destructive"
                     iconName="LogOut"
                   >
                     Sign Out
@@ -266,21 +375,25 @@ const Header = () => {
         </div>
       </div>
 
-      {/* 📱 Mobile Bottom Navigation */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 z-1000 bg-background border-t border-border">
-        <div className="flex items-center justify-around py-2">
-          {navigationItems.map((item) => (
-            <button
-              key={item.path}
-              onClick={() => handleNavigation(item.path)}
-              className={`flex flex-col items-center ${
-                location.pathname === item.path ? "text-accent" : "text-muted-foreground"
-              }`}
-            >
-              <Icon name={item.icon} size={20} />
-              <span className="text-xs">{item.label}</span>
-            </button>
-          ))}
+      {/* MOBILE BOTTOM NAVIGATION */}
+      <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-border bg-background/95 backdrop-blur">
+        <div className="flex items-center justify-around py-1.5">
+          {navigationItems.map((item) => {
+            const active = location.pathname === item.path;
+            return (
+              <button
+                key={item.path}
+                type="button"
+                onClick={() => handleNavigation(item.path)}
+                className={`flex flex-col items-center gap-0.5 text-[11px] ${
+                  active ? "text-accent" : "text-muted-foreground"
+                }`}
+              >
+                <Icon name={item.icon} size={18} />
+                <span>{item.label}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
     </header>

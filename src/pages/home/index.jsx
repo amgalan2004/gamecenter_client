@@ -14,7 +14,7 @@ const Home = () => {
       <section className="min-h-screen flex flex-col items-center justify-center text-center text-white bg-gradient-to-br from-[#0f172a] via-[#1e293b] to-[#334155] pt-24 px-6">
         <div className="max-w-4xl mx-auto space-y-6">
           <h1 className="text-5xl md:text-6xl font-extrabold leading-tight">
-            Нэгд. Тогло. Дийл.  
+            Нэгд. Тогло. Ял.  
             <span className="block text-blue-400 mt-2">GameCenter Connect-д тавтай морил!</span>
           </h1>
 

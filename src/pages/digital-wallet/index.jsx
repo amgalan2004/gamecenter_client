@@ -1,410 +1,563 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import Header from '../../components/ui/Header';
-import WalletBalance from './components/WalletBalance';
-import QuickTopUp from './components/QuickTopUp';
-import TransactionHistory from './components/TransactionHistory';
-import SpendingAnalytics from './components/SpendingAnalytics';
-import Icon from '../../components/AppIcon';
-import Button from '../../components/ui/Button';
-import { t, formatCurrency, convertToMNT } from '../../utils/i18n';
+// src/pages/digital-wallet/index.jsx
+import React, { useState, useEffect, useMemo } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
+import Header from "../../components/ui/Header";
+import WalletBalance from "./components/WalletBalance";
+import QuickTopUp from "./components/QuickTopUp";
+import TransactionHistory from "./components/TransactionHistory";
+import SpendingAnalytics from "./components/SpendingAnalytics";
+import Icon from "../../components/AppIcon";
+import Button from "../../components/ui/Button";
+import { t, formatCurrency } from "../../utils/i18n";
+
+// --------------------
+// Auth token helper
+// --------------------
+const getAuthToken = () => {
+  try {
+    const direct =
+      localStorage.getItem("token") ||
+      localStorage.getItem("authToken") ||
+      localStorage.getItem("accessToken");
+    if (direct) return direct;
+
+    const candidates = ["userData", "user", "gc_user", "currentUser"];
+    for (const key of candidates) {
+      const raw = localStorage.getItem(key);
+      if (!raw) continue;
+      try {
+        const obj = JSON.parse(raw);
+        if (obj.token) return obj.token;
+        if (obj.accessToken) return obj.accessToken;
+      } catch {}
+    }
+    return null;
+  } catch {
+    return null;
+  }
+};
+
+const API_URL = "http://localhost:5000";
 
 const DigitalWallet = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // ✅ reservation төлбөрийн мэдээлэл (navigate state-ээр ирнэ)
+  const reservationPayment = location.state?.reservationId
+    ? {
+        reservationId: location.state.reservationId,
+        totalPrice: Number(location.state.totalPrice || 0),
+        paymentDeadline: location.state.paymentDeadline,
+      }
+    : null;
+
+  const [activeView, setActiveView] = useState("overview");
   const [isTopUpModalOpen, setIsTopUpModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [activeView, setActiveView] = useState('overview');
-  const navigate = useNavigate();
 
-  // Mock wallet data - converted to MNT
-  const [walletData, setWalletData] = useState({
-    balance: convertToMNT(127.50), // ₮357,000
-    recentChange: {
-      amount: convertToMNT(25.00), // ₮70,000
-      period: t('today')
+  const [walletData, setWalletData] = useState(null);
+  const [transactions, setTransactions] = useState([]);
+
+  const [error, setError] = useState("");
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
+
+  // ✅ reservation төлбөрийн төлөвүүд
+  const [timeLeftMs, setTimeLeftMs] = useState(null);
+  const [isPaying, setIsPaying] = useState(false);
+
+  const token = getAuthToken();
+
+  // -------------------------------------------------
+  // 1. Түрийвчийн баланс татах
+  // -------------------------------------------------
+  const fetchWallet = async (signal) => {
+    try {
+      setError("");
+
+      const res = await fetch(`${API_URL}/api/wallet/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+        signal,
+      });
+
+      // ✅ 401/403 үед хуучин дата харагдахгүй болгох
+      if (res.status === 401 || res.status === 403) {
+        setWalletData(null);
+        throw new Error("Нэвтрэлт хүчингүй болсон байна. Дахин нэвтэрнэ үү.");
+      }
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.error) {
+        // ✅ wallet байхгүй/алдаа гарвал хуучин state үлдээхгүй
+        setWalletData({
+          balance: 0,
+          recentChange: { amount: 0, period: "" },
+        });
+        throw new Error(data.error || "Wallet error");
+      }
+
+      setWalletData({
+        balance: Number(data.wallet?.balance || 0),
+        recentChange: { amount: 0, period: "" },
+      });
+    } catch (err) {
+      if (err?.name === "AbortError") return;
+      setError(err.message || "Түрийвчийн мэдээлэл татахад алдаа гарлаа.");
     }
-  });
-
-  // Mock transaction data - Mongolia specific
-  const transactions = [
-    {
-      id: 'txn_001',
-      type: 'topup',
-      description: t('wallet.topup'),
-      amount: convertToMNT(50.00), // ₮140,000
-      date: '2025-01-15T10:30:00Z',
-      status: t('completed'),
-      method: t('credit.card'),
-      reference: 'TOP001'
-    },
-    {
-      id: 'txn_002',
-      type: 'booking',
-      description: t('gaming.session') + ' - Cyber Arena Ulaanbaatar',
-      amount: -convertToMNT(24.00), // -₮67,200
-      date: '2025-01-15T14:15:00Z',
-      status: t('completed'),
-      center: 'Cyber Arena Ulaanbaatar',
-      reference: 'BKG002'
-    },
-    {
-      id: 'txn_003',
-      type: 'booking',
-      description: t('gaming.session') + ' - GameZone Elite',
-      amount: -convertToMNT(18.50), // -₮51,800
-      date: '2025-01-14T16:45:00Z',
-      status: t('completed'),
-      center: 'GameZone Elite',
-      reference: 'BKG003'
-    },
-    {
-      id: 'txn_004',
-      type: 'refund',
-      description: t('booking.cancellation.refund'),
-      amount: convertToMNT(15.00), // ₮42,000
-      date: '2025-01-14T09:20:00Z',
-      status: t('completed'),
-      center: 'Elite Gaming Hub',
-      reference: 'REF004'
-    },
-    {
-      id: 'txn_005',
-      type: 'topup',
-      description: t('wallet.topup'),
-      amount: convertToMNT(100.00), // ₮280,000
-      date: '2025-01-13T11:00:00Z',
-      status: t('completed'),
-      method: 'PayPal',
-      reference: 'TOP005'
-    },
-    {
-      id: 'txn_006',
-      type: 'booking',
-      description: t('gaming.session') + ' - Neon Gaming Hub',
-      amount: -convertToMNT(32.00), // -₮89,600
-      date: '2025-01-12T19:30:00Z',
-      status: t('completed'),
-      center: 'Neon Gaming Hub',
-      reference: 'BKG006'
-    },
-    {
-      id: 'txn_007',
-      type: 'booking',
-      description: t('gaming.session') + ' - Cyber Arena Ulaanbaatar',
-      amount: -convertToMNT(28.00), // -₮78,400
-      date: '2025-01-11T15:15:00Z',
-      status: t('completed'),
-      center: 'Cyber Arena Ulaanbaatar',
-      reference: 'BKG007'
-    },
-    {
-      id: 'txn_008',
-      type: 'topup',
-      description: t('wallet.topup'),
-      amount: convertToMNT(75.00), // ₮210,000
-      date: '2025-01-10T08:45:00Z',
-      status: t('pending'),
-      method: t('bank.transfer'),
-      reference: 'TOP008'
-    }
-  ];
-
-  // Mock analytics data - converted to MNT
-  const analyticsData = {
-    totalSpent: convertToMNT(485.50), // ₮1,359,400
-    totalBookings: 24,
-    avgPerBooking: convertToMNT(20.23), // ₮56,644
-    hoursPlayed: 96,
-    monthly: [
-      { month: 'Aug', amount: convertToMNT(65.50) },
-      { month: 'Sep', amount: convertToMNT(89.25) },
-      { month: 'Oct', amount: convertToMNT(124.75) },
-      { month: 'Nov', amount: convertToMNT(98.50) },
-      { month: 'Dec', amount: convertToMNT(107.50) },
-      { month: 'Jan', amount: convertToMNT(142.75) }
-    ],
-    categories: [
-      { name: 'Тоглоомын сешн', amount: convertToMNT(285.50), percentage: 58.8 },
-      { name: 'Премиум цагууд', amount: convertToMNT(125.00), percentage: 25.7 },
-      { name: 'Тэмцээний бүртгэл', amount: convertToMNT(45.00), percentage: 9.3 },
-      { name: 'Төхөөрөмжийн түрээс', amount: convertToMNT(30.00), percentage: 6.2 }
-    ],
-    centers: [
-      { name: 'Cyber Arena Ulaanbaatar', amount: convertToMNT(156.00), visits: 8, percentage: 32.1 },
-      { name: 'GameZone Elite', amount: convertToMNT(98.50), visits: 5, percentage: 20.3 },
-      { name: 'Neon Gaming Hub', amount: convertToMNT(87.25), visits: 4, percentage: 18.0 },
-      { name: 'Digital Paradise', amount: convertToMNT(73.75), visits: 3, percentage: 15.2 },
-      { name: 'Esports Arena Pro', amount: convertToMNT(70.00), visits: 4, percentage: 14.4 }
-    ]
   };
+
+  // -------------------------------------------------
+  // 2. Гүйлгээ татах
+  // -------------------------------------------------
+  const fetchTransactions = async (signal) => {
+    try {
+      setError("");
+
+      const res = await fetch(`${API_URL}/api/wallet/transactions`, {
+        headers: { Authorization: `Bearer ${token}` },
+        signal,
+      });
+
+      if (res.status === 401 || res.status === 403) {
+        setTransactions([]);
+        throw new Error("Нэвтрэлт хүчингүй болсон байна. Дахин нэвтэрнэ үү.");
+      }
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.error) {
+        setTransactions([]); // ✅ хуучин гүйлгээ үлдээхгүй
+        throw new Error(data.error || "Transactions error");
+      }
+
+      const txList = (data.transactions || []).map((tx) => ({
+        id: tx.id,
+        type: tx.type === "TOPUP" ? "topup" : "booking",
+        amount: tx.type === "TOPUP" ? Number(tx.amount) : -Number(tx.amount),
+        description:
+          tx.type === "TOPUP"
+            ? tx.description || t("wallet.topup")
+            : tx.description || t("gaming.session"),
+        reference: tx.id,
+        date: tx.created_at,
+        status: "completed",
+        center: tx.center_name || undefined,
+      }));
+
+      setTransactions(txList);
+    } catch (err) {
+      if (err?.name === "AbortError") return;
+      setError(err.message || "Гүйлгээний жагсаалт татах үед алдаа гарлаа.");
+    }
+  };
+
+  // -------------------------------------------------
+  // 3. Түрийвч цэнэглэх
+  // -------------------------------------------------
+  const handleTopUp = async (topUpData) => {
+    try {
+      setIsLoading(true);
+      setError("");
+
+      const res = await fetch(`${API_URL}/api/wallet/topup`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          amount: Number(topUpData.amount),
+          method: topUpData.method || "CARD",
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.error)
+        throw new Error(data.error || "Top-up алдаа гарлаа.");
+
+      setWalletData((prev) => ({
+        ...(prev || { balance: 0, recentChange: { amount: 0, period: "" } }),
+        balance: Number(data.balance),
+        recentChange: {
+          amount: Number(topUpData.amount),
+          period: t("just.now"),
+        },
+      }));
+
+      // ✅ дараалж шинэчлэх
+      await fetchTransactions();
+      setIsTopUpModalOpen(false);
+    } catch (err) {
+      setError(err.message || "Түрийвч цэнэглэх үед алдаа гарлаа.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // -------------------------------------------------
+  // 4. Эхлэх үед өгөгдөл татах (TOKEN солигдоход state reset)
+  // -------------------------------------------------
+  useEffect(() => {
+    // ✅ token байхгүй үед бүх state цэвэрлэ
+    if (!token) {
+      setWalletData(null);
+      setTransactions([]);
+      setError("Та эхлээд нэвтэрнэ үү.");
+      setIsInitialLoading(false);
+      return;
+    }
+
+    // ✅ token солигдох бүрд өмнөх хэрэглэгчийн дата харагдахгүй
+    setWalletData(null);
+    setTransactions([]);
+    setError("");
+    setIsInitialLoading(true);
+
+    const controller = new AbortController();
+
+    const load = async () => {
+      await Promise.all([
+        fetchWallet(controller.signal),
+        fetchTransactions(controller.signal),
+      ]);
+      setIsInitialLoading(false);
+    };
+
+    load();
+
+    return () => controller.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
+
+  // -------------------------------------------------
+  // 5. Reservation countdown + expire
+  // -------------------------------------------------
+  useEffect(() => {
+    if (!reservationPayment?.paymentDeadline) {
+      setTimeLeftMs(null);
+      return;
+    }
+
+    let expiredOnce = false;
+
+    const tick = () => {
+      const diff =
+        new Date(reservationPayment.paymentDeadline).getTime() - Date.now();
+      const safe = diff > 0 ? diff : 0;
+      setTimeLeftMs(safe);
+
+      if (safe === 0 && !expiredOnce) {
+        expiredOnce = true;
+        expireReservationSafe();
+      }
+    };
+
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reservationPayment?.paymentDeadline, reservationPayment?.reservationId, token]);
+
+  const formatTime = (ms) => {
+    const totalSec = Math.floor(ms / 1000);
+    const m = Math.floor(totalSec / 60);
+    const s = totalSec % 60;
+    return `${m}:${String(s).padStart(2, "0")}`;
+  };
+
+  const expireReservationSafe = async () => {
+    try {
+      if (!token || !reservationPayment?.reservationId) return;
+
+      await fetch(
+        `${API_URL}/api/reservations/${reservationPayment.reservationId}/expire`,
+        {
+          method: "PUT",
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+    } catch {}
+  };
+
+  const payReservation = async () => {
+    if (!reservationPayment?.reservationId) return;
+
+    if (!walletData) {
+      setError("Түрийвчийн мэдээлэл олдсонгүй.");
+      return;
+    }
+
+    if ((timeLeftMs ?? 1) === 0) {
+      setError("Төлбөр хийх хугацаа дууссан байна.");
+      return;
+    }
+
+    if (walletData.balance < reservationPayment.totalPrice) {
+      setError("Түрийвчний үлдэгдэл хүрэлцэхгүй байна.");
+      return;
+    }
+
+    try {
+      setIsPaying(true);
+      setError("");
+
+      const res = await fetch(
+        `${API_URL}/api/reservations/${reservationPayment.reservationId}/confirm`,
+        {
+          method: "PUT",
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.error) {
+        throw new Error(data.error || "Төлбөр баталгаажуулахад алдаа гарлаа.");
+      }
+
+      // Wallet + tx refresh
+      await Promise.all([fetchWallet(), fetchTransactions()]);
+      navigate("/booking-history");
+    } catch (err) {
+      setError(err.message || "Төлбөрийн үед алдаа гарлаа.");
+    } finally {
+      setIsPaying(false);
+    }
+  };
+
+  // -------------------------------------------------
+  // 6. Analytics-ийн тооцоолол
+  // -------------------------------------------------
+  const analyticsData = useMemo(() => {
+    if (!transactions.length) {
+      return {
+        totalSpent: 0,
+        totalBookings: 0,
+        avgPerBooking: 0,
+        hoursPlayed: 0,
+        monthly: [],
+        categories: [],
+        centers: [],
+      };
+    }
+
+    const bookingTx = transactions.filter((x) => x.type === "booking");
+    const totalSpent = bookingTx.reduce((sum, x) => sum + Math.abs(x.amount), 0);
+    const totalBookings = bookingTx.length;
+    const avgPerBooking = totalBookings ? totalSpent / totalBookings : 0;
+
+    return {
+      totalSpent,
+      totalBookings,
+      avgPerBooking,
+      hoursPlayed: 0,
+      monthly: [],
+      categories: [],
+      centers: [],
+    };
+  }, [transactions]);
 
   const viewTabs = [
-    { id: 'overview', label: t('overview'), icon: 'LayoutDashboard' },
-    { id: 'transactions', label: t('transactions'), icon: 'Receipt' },
-    { id: 'analytics', label: t('analytics'), icon: 'BarChart3' }
+    { id: "overview", label: t("overview"), icon: "LayoutDashboard" },
+    { id: "transactions", label: t("transactions"), icon: "Receipt" },
+    { id: "analytics", label: t("analytics"), icon: "BarChart3" },
   ];
 
-  const handleTopUp = async (topUpData) => {
-    setIsLoading(true);
-    
-    // Simulate API call
-    setTimeout(() => {
-      setWalletData(prev => ({
-        ...prev,
-        balance: prev?.balance + topUpData?.amount,
-        recentChange: {
-          amount: topUpData?.amount,
-          period: t('just.now')
-        }
-      }));
-      
-      setIsLoading(false);
-      setIsTopUpModalOpen(false);
-      
-      // Show success message (in real app, use toast notification)
-      alert(`Амжилттай ${formatCurrency(topUpData?.amount)} түрийвчтээ нэмэгдлээ!`);
-    }, 2000);
-  };
-
-  const handleQuickAction = (action) => {
-    switch (action) {
-      case 'book': navigate('/gaming-center-map');
-        break;
-      case 'history': navigate('/booking-history');
-        break;
-      case 'topup':
-        setIsTopUpModalOpen(true);
-        break;
-      default:
-        break;
-    }
-  };
-
-  useEffect(() => {
-    document.title = t('digital.wallet') + ' - GameCenter Connect';
-  }, []);
+  const showWalletUI = token && !isInitialLoading;
 
   return (
     <div className="min-h-screen bg-background">
       <Header />
+
       <main className="pt-16 pb-20 md:pb-8">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="max-w-7xl mx-auto px-4 py-8">
+          {/* Error Message */}
+          {error && (
+            <div className="bg-red-500/15 text-red-300 border border-red-400 px-4 py-2 rounded-lg mb-4 text-sm">
+              {error}
+            </div>
+          )}
+
           {/* Page Header */}
           <div className="flex items-center justify-between mb-8">
             <div>
-              <h1 className="text-3xl font-bold text-foreground">{t('digital.wallet')}</h1>
-              <p className="text-muted-foreground mt-1">
-                {t('manage.funds')}
-              </p>
+              <h1 className="text-3xl font-bold text-foreground">
+                {t("digital.wallet")}
+              </h1>
+              <p className="text-muted-foreground mt-1">{t("manage.funds")}</p>
             </div>
-            <div className="hidden md:flex space-x-3">
+
+            <div className="hidden md:flex gap-3">
               <Button
                 variant="outline"
-                onClick={() => handleQuickAction('book')}
                 iconName="Gamepad2"
                 iconPosition="left"
+                onClick={() => navigate("/gaming-center-map")}
               >
-                {t('book.session')}
+                {t("book.session")}
               </Button>
+
               <Button
                 variant="default"
-                onClick={() => handleQuickAction('topup')}
                 iconName="Plus"
                 iconPosition="left"
+                onClick={() => setIsTopUpModalOpen(true)}
+                disabled={!token}
               >
-                {t('top.up.wallet')}
+                {t("top.up.wallet")}
               </Button>
             </div>
           </div>
 
-          {/* Mobile Quick Actions */}
-          <div className="md:hidden mb-6">
-            <div className="grid grid-cols-3 gap-3">
-              <Button
-                variant="outline"
-                onClick={() => handleQuickAction('book')}
-                iconName="Gamepad2"
-                size="sm"
-                className="flex-col h-16 space-y-1"
-              >
-                <span className="text-xs">{t('book')}</span>
-              </Button>
-              <Button
-                variant="default"
-                onClick={() => handleQuickAction('topup')}
-                iconName="Plus"
-                size="sm"
-                className="flex-col h-16 space-y-1"
-              >
-                <span className="text-xs">{t('top.up')}</span>
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => handleQuickAction('history')}
-                iconName="History"
-                size="sm"
-                className="flex-col h-16 space-y-1"
-              >
-                <span className="text-xs">{t('history')}</span>
-              </Button>
-            </div>
-          </div>
-
-          {/* View Tabs */}
-          <div className="flex space-x-1 mb-8 bg-muted/30 p-1 rounded-lg">
-            {viewTabs?.map((tab) => (
+          {!token ? (
+            <p className="text-muted-foreground">
+              Нэвтрээгүй байгаа тул түрийвчийн мэдээлэл харагдахгүй байна. Дээрх
+              цэсэн дэх{" "}
               <button
-                key={tab?.id}
-                onClick={() => setActiveView(tab?.id)}
-                className={`flex items-center space-x-2 px-4 py-2 rounded-md transition-smooth flex-1 justify-center ${
-                  activeView === tab?.id
-                    ? 'bg-background text-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
+                onClick={() => navigate("/login")}
+                className="underline text-primary"
               >
-                <Icon name={tab?.icon} size={16} />
-                <span className="font-medium">{tab?.label}</span>
-              </button>
-            ))}
-          </div>
+                нэвтрэх
+              </button>{" "}
+              товчийг дарна уу.
+            </p>
+          ) : isInitialLoading ? (
+            <p className="text-muted-foreground">Ачаалж байна...</p>
+          ) : (
+            <>
+              {/* ✅ Reservation payment block */}
+              {reservationPayment && walletData && (
+                <div className="bg-card border border-border rounded-lg p-5 mb-8">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <h2 className="text-lg font-semibold">Захиалгын төлбөр</h2>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        {reservationPayment.paymentDeadline
+                          ? `Төлбөр хийх хугацаа: ${new Date(
+                              reservationPayment.paymentDeadline
+                            ).toLocaleString()}`
+                          : "Төлбөрийн хугацаа тодорхойгүй"}
+                      </p>
+                    </div>
 
-          {/* Content Based on Active View */}
-          {activeView === 'overview' && (
-            <div className="space-y-8">
-              {/* Wallet Balance */}
-              <WalletBalance
-                balance={walletData?.balance}
-                recentChange={walletData?.recentChange}
-                onTopUp={() => setIsTopUpModalOpen(true)}
-              />
-
-              {/* Recent Transactions */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                <div>
-                  <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-xl font-semibold text-foreground">{t('recent.activity')}</h2>
                     <Button
                       variant="ghost"
-                      onClick={() => setActiveView('transactions')}
-                      iconName="ArrowRight"
-                      iconPosition="right"
-                      size="sm"
+                      iconName="X"
+                      iconPosition="left"
+                      onClick={() => navigate("/booking-history")}
                     >
-                      {t('view.all')}
+                      Хаах
                     </Button>
                   </div>
-                  <div className="bg-card border border-border rounded-lg divide-y divide-border">
-                    {transactions?.slice(0, 5)?.map((transaction) => (
-                      <div key={transaction?.id} className="p-4 hover:bg-muted/30 transition-smooth">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center space-x-3">
-                            <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                              transaction?.type === 'topup' ? 'bg-success/20' :
-                              transaction?.type === 'refund' ? 'bg-warning/20' : 'bg-primary/20'
-                            }`}>
-                              <Icon 
-                                name={transaction?.type === 'topup' ? 'Plus' : 
-                                      transaction?.type === 'refund' ? 'RotateCcw' : 'Gamepad2'} 
-                                size={16} 
-                                className={
-                                  transaction?.type === 'topup' || transaction?.amount > 0 ? 'text-success' : 'text-destructive'
-                                }
-                              />
-                            </div>
-                            <div>
-                              <div className="font-medium text-foreground text-sm">{transaction?.description}</div>
-                              <div className="text-xs text-muted-foreground">
-                                {new Date(transaction.date)?.toLocaleDateString('mn-MN')}
-                              </div>
-                            </div>
-                          </div>
-                          <div className={`font-semibold ${
-                            transaction?.amount > 0 ? 'text-success' : 'text-destructive'
-                          }`}>
-                            {transaction?.amount > 0 ? '+' : ''}{formatCurrency(Math.abs(transaction?.amount))}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
 
-                {/* Quick Stats */}
-                <div>
-                  <h2 className="text-xl font-semibold text-foreground mb-4">{t('quick.stats')}</h2>
-                  <div className="space-y-4">
-                    <div className="bg-card border border-border rounded-lg p-4">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-3">
-                          <div className="w-10 h-10 bg-primary/20 rounded-lg flex items-center justify-center">
-                            <Icon name="Calendar" size={20} className="text-primary" />
-                          </div>
-                          <div>
-                            <div className="font-medium text-foreground">{t('this.month')}</div>
-                            <div className="text-sm text-muted-foreground">{t('gaming.expenses')}</div>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <div className="text-lg font-semibold text-foreground">{formatCurrency(convertToMNT(142.75))}</div>
-                          <div className="text-sm text-success">+12% өмнөх сараас</div>
-                        </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+                    <div className="bg-muted/30 rounded-lg p-4">
+                      <div className="text-sm text-muted-foreground">Төлөх дүн</div>
+                      <div className="text-xl font-bold text-accent mt-1">
+                        {formatCurrency(reservationPayment.totalPrice)}
                       </div>
                     </div>
 
-                    <div className="bg-card border border-border rounded-lg p-4">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-3">
-                          <div className="w-10 h-10 bg-accent/20 rounded-lg flex items-center justify-center">
-                            <Icon name="Clock" size={20} className="text-accent" />
-                          </div>
-                          <div>
-                            <div className="font-medium text-foreground">{t('hours.played')}</div>
-                            <div className="text-sm text-muted-foreground">Энэ сар</div>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <div className="text-lg font-semibold text-foreground">28ц</div>
-                          <div className="text-sm text-muted-foreground">{t('avg.per.week')}</div>
-                        </div>
+                    <div className="bg-muted/30 rounded-lg p-4">
+                      <div className="text-sm text-muted-foreground">Таны баланс</div>
+                      <div className="text-xl font-bold mt-1">
+                        {formatCurrency(walletData.balance)}
                       </div>
                     </div>
 
-                    <div className="bg-card border border-border rounded-lg p-4">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-3">
-                          <div className="w-10 h-10 bg-success/20 rounded-lg flex items-center justify-center">
-                            <Icon name="MapPin" size={20} className="text-success" />
-                          </div>
-                          <div>
-                            <div className="font-medium text-foreground">{t('favorite.center')}</div>
-                            <div className="text-sm text-muted-foreground">{t('most.visited')}</div>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <div className="text-sm font-medium text-foreground">CyberArena</div>
-                          <div className="text-sm text-muted-foreground">8 {t('visits')}</div>
-                        </div>
+                    <div className="bg-muted/30 rounded-lg p-4 text-center">
+                      <div className="text-sm text-muted-foreground">Үлдсэн хугацаа</div>
+                      <div className="text-2xl font-bold text-red-500 mt-1">
+                        {timeLeftMs === null ? "--:--" : formatTime(timeLeftMs)}
                       </div>
                     </div>
                   </div>
+
+                  <div className="flex flex-col md:flex-row gap-3 mt-4">
+                    <Button
+                      variant="default"
+                      className="md:flex-1"
+                      iconName="Wallet"
+                      iconPosition="left"
+                      onClick={payReservation}
+                      disabled={
+                        isPaying ||
+                        (timeLeftMs !== null && timeLeftMs === 0) ||
+                        walletData.balance < reservationPayment.totalPrice
+                      }
+                    >
+                      {isPaying ? "Төлж байна..." : "Хэтэвчнээс төлөх"}
+                    </Button>
+
+                    <Button
+                      variant="outline"
+                      className="md:flex-1"
+                      iconName="Plus"
+                      iconPosition="left"
+                      onClick={() => setIsTopUpModalOpen(true)}
+                    >
+                      {t("top.up.wallet")}
+                    </Button>
+                  </div>
+
+                  {walletData.balance < reservationPayment.totalPrice && (
+                    <p className="text-sm text-red-300 mt-3">
+                      Баланс хүрэлцэхгүй байна. Түрийвчээ цэнэглээд дахин төлнө үү.
+                    </p>
+                  )}
+
+                  {timeLeftMs === 0 && (
+                    <p className="text-sm text-red-300 mt-3">
+                      Төлбөр хийх хугацаа дууссан байна. Захиалга хүчингүй болж магадгүй.
+                    </p>
+                  )}
                 </div>
+              )}
+
+              {/* Tabs */}
+              <div className="flex space-x-1 mb-8 bg-muted/30 p-1 rounded-lg">
+                {viewTabs.map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveView(tab.id)}
+                    className={`flex items-center justify-center gap-2 px-4 py-2 rounded-md flex-1 transition ${
+                      activeView === tab.id
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <Icon name={tab.icon} size={16} />
+                    {tab.label}
+                  </button>
+                ))}
               </div>
-            </div>
-          )}
 
-          {activeView === 'transactions' && (
-            <TransactionHistory transactions={transactions} />
-          )}
+              {activeView === "overview" && walletData && (
+                <div className="space-y-8">
+                  <WalletBalance
+                    balance={walletData.balance}
+                    recentChange={walletData.recentChange}
+                    onTopUp={() => setIsTopUpModalOpen(true)}
+                  />
+                  <TransactionHistory transactions={transactions.slice(0, 5)} />
+                  <SpendingAnalytics analyticsData={analyticsData} />
+                </div>
+              )}
 
-          {activeView === 'analytics' && (
-            <SpendingAnalytics analyticsData={analyticsData} />
+              {activeView === "transactions" && (
+                <TransactionHistory transactions={transactions} full />
+              )}
+
+              {activeView === "analytics" && (
+                <SpendingAnalytics analyticsData={analyticsData} />
+              )}
+            </>
           )}
 
           {/* Top-up Modal */}
           {isTopUpModalOpen && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-              <div className="bg-background border border-border rounded-lg max-w-md w-full max-h-[90vh] overflow-y-auto">
-                <div className="flex items-center justify-between p-4 border-b border-border">
-                  <h3 className="text-lg font-semibold text-foreground">{t('top.up.wallet')}</h3>
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+              <div className="bg-background border border-border rounded-lg max-w-md w-full">
+                <div className="flex justify-between items-center p-4 border-b border-border">
+                  <h3 className="text-lg font-semibold">{t("top.up.wallet")}</h3>
                   <Button
                     variant="ghost"
                     size="icon"
@@ -413,12 +566,36 @@ const DigitalWallet = () => {
                     <Icon name="X" size={20} />
                   </Button>
                 </div>
+
                 <div className="p-4">
-                  <QuickTopUp
-                    onTopUp={handleTopUp}
-                    isLoading={isLoading}
-                  />
+                  <QuickTopUp onTopUp={handleTopUp} isLoading={isLoading} />
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* Mobile bottom actions */}
+          {showWalletUI && (
+            <div className="md:hidden fixed bottom-16 left-0 right-0 p-4 bg-background border-t border-border">
+              <div className="flex gap-3">
+                <Button
+                  className="flex-1"
+                  variant="outline"
+                  iconName="Gamepad2"
+                  iconPosition="left"
+                  onClick={() => navigate("/gaming-center-map")}
+                >
+                  {t("book.session")}
+                </Button>
+                <Button
+                  className="flex-1"
+                  variant="default"
+                  iconName="Plus"
+                  iconPosition="left"
+                  onClick={() => setIsTopUpModalOpen(true)}
+                >
+                  {t("top.up.wallet")}
+                </Button>
               </div>
             </div>
           )}

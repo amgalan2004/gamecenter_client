@@ -1,149 +1,191 @@
-import React, { useState } from 'react';
-import Icon from '../../../components/AppIcon';
-import Button from '../../../components/ui/Button';
-import Input from '../../../components/ui/Input';
+// src/pages/digital-wallet/components/QuickTopUp.jsx
+import React, { useState } from "react";
+import Icon from "../../../components/AppIcon";
+import Button from "../../../components/ui/Button";
+import Input from "../../../components/ui/Input";
+import { t } from "../../../utils/i18n";
+
+const MIN_TOPUP = 5000;      // 5,000₮
+const MAX_TOPUP = 500000;    // 500,000₮ (хүсвэл өөрчлөөд болно)
+
+const quickAmounts = [5000, 10000, 20000, 50000, 100000];
+
+const formatMNT = (value) =>
+  `MNT ${Number(value || 0).toLocaleString("mn-MN")}`;
 
 const QuickTopUp = ({ onTopUp, isLoading }) => {
-  const [selectedAmount, setSelectedAmount] = useState(null);
-  const [customAmount, setCustomAmount] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState('card');
+  const [amount, setAmount] = useState("");
+  const [method, setMethod] = useState("CARD"); // CARD | PAYPAL | BANK
+  const [error, setError] = useState("");
 
-  const predefinedAmounts = [10, 25, 50, 100, 200];
-  const minAmount = 5;
-  const maxAmount = 500;
-
-  const paymentMethods = [
-    { id: 'card', name: 'Credit/Debit Card', icon: 'CreditCard' },
-    { id: 'paypal', name: 'PayPal', icon: 'Smartphone' },
-    { id: 'bank', name: 'Bank Transfer', icon: 'Building2' }
-  ];
-
-  const handleAmountSelect = (amount) => {
-    setSelectedAmount(amount);
-    setCustomAmount('');
+  const handleSelectQuick = (value) => {
+    setError("");
+    setAmount(String(value));
   };
 
-  const handleCustomAmountChange = (e) => {
-    const value = e?.target?.value;
-    setCustomAmount(value);
-    setSelectedAmount(null);
+  const handleAmountChange = (e) => {
+    const raw = e.target.value.replace(/\D/g, ""); // зөвхөн тоо
+    setAmount(raw);
+    setError("");
   };
 
-  const getSelectedAmount = () => {
-    return selectedAmount || parseFloat(customAmount) || 0;
-  };
+  const validate = () => {
+    const num = Number(amount || 0);
 
-  const isValidAmount = () => {
-    const amount = getSelectedAmount();
-    return amount >= minAmount && amount <= maxAmount;
-  };
-
-  const handleTopUp = () => {
-    if (isValidAmount()) {
-      onTopUp({
-        amount: getSelectedAmount(),
-        method: paymentMethod
-      });
+    if (!num) {
+      setError("Дүнгээ оруулна уу.");
+      return false;
     }
+    if (num < MIN_TOPUP) {
+      setError(`Хамгийн багадаа ${MIN_TOPUP.toLocaleString("mn-MN")}₮.`);
+      return false;
+    }
+    if (num > MAX_TOPUP) {
+      setError(
+        `Хамгийн ихдээ ${MAX_TOPUP.toLocaleString("mn-MN")}₮ хүртэл цэнэглэнэ.`
+      );
+      return false;
+    }
+    return true;
   };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!validate()) return;
+
+    const num = Number(amount);
+
+    onTopUp?.({
+      amount: num,                // backend рүү шууд төгрөгөөр явж байна
+      method:
+        method === "CARD"
+          ? "Credit/Debit card"
+          : method === "PAYPAL"
+          ? "PayPal"
+          : "Bank transfer",
+    });
+  };
+
+  const numericAmount = Number(amount || 0);
+  const disabled = isLoading || numericAmount < MIN_TOPUP;
 
   return (
-    <div className="bg-card border border-border rounded-lg p-6">
-      <div className="flex items-center space-x-2 mb-6">
-        <Icon name="Plus" size={20} className="text-accent" />
-        <h3 className="text-lg font-semibold text-foreground">Top Up Wallet</h3>
-      </div>
-      {/* Predefined Amounts */}
-      <div className="mb-6">
-        <label className="block text-sm font-medium text-foreground mb-3">
-          Quick Select Amount
+    <form onSubmit={handleSubmit} className="space-y-6">
+      {/* Quick amounts */}
+      <div>
+        <label className="block text-sm font-medium text-foreground mb-2">
+          Top Up Amount (MNT)
         </label>
-        <div className="grid grid-cols-3 md:grid-cols-5 gap-3">
-          {predefinedAmounts?.map((amount) => (
-            <Button
-              key={amount}
-              variant={selectedAmount === amount ? 'default' : 'outline'}
-              onClick={() => handleAmountSelect(amount)}
-              className="h-12"
-            >
-              ${amount}
-            </Button>
-          ))}
-        </div>
-      </div>
-      {/* Custom Amount */}
-      <div className="mb-6">
-        <Input
-          label="Custom Amount"
-          type="number"
-          placeholder="Enter amount"
-          value={customAmount}
-          onChange={handleCustomAmountChange}
-          min={minAmount}
-          max={maxAmount}
-          description={`Minimum $${minAmount}, Maximum $${maxAmount}`}
-          error={customAmount && !isValidAmount() ? 
-            `Amount must be between $${minAmount} and $${maxAmount}` : ''}
-        />
-      </div>
-      {/* Payment Methods */}
-      <div className="mb-6">
-        <label className="block text-sm font-medium text-foreground mb-3">
-          Payment Method
-        </label>
-        <div className="space-y-2">
-          {paymentMethods?.map((method) => (
+        <div className="flex flex-wrap gap-2 mb-3">
+          {quickAmounts.map((val) => (
             <button
-              key={method?.id}
-              onClick={() => setPaymentMethod(method?.id)}
-              className={`w-full flex items-center space-x-3 p-3 rounded-lg border transition-smooth ${
-                paymentMethod === method?.id
-                  ? 'border-primary bg-primary/10 text-primary' :'border-border hover:border-primary/50 text-foreground'
+              type="button"
+              key={val}
+              onClick={() => handleSelectQuick(val)}
+              className={`px-3 py-1.5 rounded-full border text-sm transition ${
+                Number(amount) === val
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "border-border text-muted-foreground hover:border-primary/50"
               }`}
             >
-              <Icon name={method?.icon} size={20} />
-              <span className="font-medium">{method?.name}</span>
-              {paymentMethod === method?.id && (
-                <Icon name="Check" size={16} className="ml-auto" />
-              )}
+              {val.toLocaleString("mn-MN")}₮
             </button>
           ))}
         </div>
+
+        <Input
+          type="number"
+          min={MIN_TOPUP}
+          max={MAX_TOPUP}
+          value={amount}
+          onChange={handleAmountChange}
+          placeholder="Дүнгээ оруулна уу"
+        />
+        <p className="text-xs text-muted-foreground mt-1">
+          Хамгийн бага {MIN_TOPUP.toLocaleString("mn-MN")}₮,
+          хамгийн их {MAX_TOPUP.toLocaleString("mn-MN")}₮
+        </p>
+        {error && (
+          <p className="text-xs text-red-400 mt-1">
+            {error}
+          </p>
+        )}
       </div>
-      {/* Security Notice */}
-      <div className="bg-muted/30 border border-border rounded-lg p-4 mb-6">
-        <div className="flex items-start space-x-3">
-          <Icon name="Shield" size={20} className="text-success mt-0.5" />
-          <div>
-            <h4 className="font-medium text-foreground mb-1">Secure Payment</h4>
-            <p className="text-sm text-muted-foreground">
-              Your payment information is encrypted and secure. We use industry-standard SSL encryption.
-            </p>
-          </div>
+
+      {/* Payment method */}
+      <div className="space-y-2">
+        <label className="block text-sm font-medium text-foreground mb-2">
+          Төлбөрийн хэлбэр
+        </label>
+
+        <div className="space-y-2">
+          <button
+            type="button"
+            onClick={() => setMethod("CARD")}
+            className={`w-full flex items-center justify-between px-3 py-2 border rounded-lg text-sm transition ${
+              method === "CARD"
+                ? "border-primary bg-primary/5"
+                : "border-border hover:border-primary/40"
+            }`}
+          >
+            <span className="flex items-center gap-2">
+              <Icon name="CreditCard" size={18} />
+              <span>Кредит/Дебит карт</span>
+            </span>
+            {method === "CARD" && <Icon name="Check" size={18} />}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setMethod("PAYPAL")}
+            className={`w-full flex items-center justify-between px-3 py-2 border rounded-lg text-sm transition ${
+              method === "PAYPAL"
+                ? "border-primary bg-primary/5"
+                : "border-border hover:border-primary/40"
+            }`}
+          >
+            <span className="flex items-center gap-2">
+              <Icon name="Smartphone" size={18} />
+              <span>PayPal (жишээ)</span>
+            </span>
+            {method === "PAYPAL" && <Icon name="Check" size={18} />}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setMethod("BANK")}
+            className={`w-full flex items-center justify-between px-3 py-2 border rounded-lg text-sm transition ${
+              method === "BANK"
+                ? "border-primary bg-primary/5"
+                : "border-border hover:border-primary/40"
+            }`}
+          >
+            <span className="flex items-center gap-2">
+              <Icon name="Banknote" size={18} />
+              <span>Банкны шилжүүлэг</span>
+            </span>
+            {method === "BANK" && <Icon name="Check" size={18} />}
+          </button>
         </div>
       </div>
-      {/* Action Buttons */}
-      <div className="flex space-x-3">
+
+      {/* Submit */}
+      <div className="pt-2 border-t border-border">
         <Button
+          type="submit"
           variant="default"
-          onClick={handleTopUp}
-          disabled={!isValidAmount() || isLoading}
+          className="w-full"
+          disabled={disabled}
           loading={isLoading}
-          iconName="CreditCard"
+          iconName="Wallet"
           iconPosition="left"
-          className="flex-1"
         >
-          Top Up ${getSelectedAmount()?.toFixed(2)}
-        </Button>
-        <Button
-          variant="outline"
-          iconName="X"
-          className="px-4"
-        >
-          Cancel
+          {numericAmount > 0
+            ? `Цэнэглэх ${formatMNT(numericAmount)}`
+            : "Цэнэглэх"}
         </Button>
       </div>
-    </div>
+    </form>
   );
 };
 
