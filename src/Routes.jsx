@@ -20,7 +20,9 @@ import GamingCenterDetails from "./pages/gaming-center-details";
 import BookingHistory from "./pages/booking-history";
 import DigitalWallet from "./pages/digital-wallet";
 import AdminDashboard from "./pages/admin-dashboard";
-
+import About from "./pages/About"; // ✅ ADD
+// import Rules from "./pages/Rules"; // (дараа хэрэгтэй бол)
+import Rules from "./pages/Rules";
 /* =========================================================
    🧩 Protected Route component (Role-based)
    ========================================================= */
@@ -29,19 +31,16 @@ const ProtectedRoute = ({ allowedRoles, children }) => {
   const authToken =
     userData?.token || localStorage.getItem("authToken") || null;
 
-  // ⛔ Хэрвээ login хийгдээгүй бол login руу буцаана
+  // ⛔ Нэвтрээгүй бол login
   if (!authToken) {
-    console.warn("⛔ Хэрэглэгч нэвтрээгүй байна → /login руу буцааж байна...");
     return <Navigate to="/login" replace />;
   }
 
-  // ⚠️ Role тохирохгүй бол access deny
+  // ⚠️ Role тохирохгүй
   if (allowedRoles && !allowedRoles.includes(userData?.role)) {
-    console.warn("⚠️ Role тохирохгүй байна:", userData?.role);
     return <Navigate to="/login" replace />;
   }
 
-  // ✅ Role зөв бол component-оо харуулна
   return children;
 };
 
@@ -51,6 +50,7 @@ const Routes = () => {
       <ErrorBoundary>
         <ScrollToTop />
         <RouterRoutes>
+
           {/* ============================
               🌍 PUBLIC ROUTES
           ============================ */}
@@ -59,7 +59,11 @@ const Routes = () => {
           <Route path="/register" element={<Register />} />
           <Route path="/register/player" element={<RegisterPlayer />} />
           <Route path="/register/center" element={<RegisterCenter />} />
-
+          
+          {/* 👉 БИДНИЙ ТУХАЙ (public + admin) */}
+          <Route path="/about" element={<About />} />
+          {/* <Route path="/rules" element={<Rules />} /> */}
+            <Route path="/rules" element={<Rules />} />
           {/* ============================
               👤 PLAYER ROUTES
           ============================ */}
@@ -109,7 +113,7 @@ const Routes = () => {
           />
 
           {/* ============================
-              ❌ 404 NOT FOUND
+              ❌ 404
           ============================ */}
           <Route path="*" element={<NotFound />} />
         </RouterRoutes>
