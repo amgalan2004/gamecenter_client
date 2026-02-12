@@ -5,10 +5,11 @@ import {
   Route,
   Navigate,
 } from "react-router-dom";
+
 import ScrollToTop from "components/ScrollToTop";
 import ErrorBoundary from "components/ErrorBoundary";
 
-// ✅ Pages
+// Pages
 import NotFound from "pages/NotFound";
 import Home from "./pages/home";
 import Login from "./pages/login";
@@ -20,25 +21,23 @@ import GamingCenterDetails from "./pages/gaming-center-details";
 import BookingHistory from "./pages/booking-history";
 import DigitalWallet from "./pages/digital-wallet";
 import AdminDashboard from "./pages/admin-dashboard";
-import About from "./pages/About"; // ✅ ADD
-// import Rules from "./pages/Rules"; // (дараа хэрэгтэй бол)
+import About from "./pages/About";
 import Rules from "./pages/Rules";
-/* =========================================================
-   🧩 Protected Route component (Role-based)
-   ========================================================= */
+
+/* ============================
+   🔐 Protected Route
+============================ */
 const ProtectedRoute = ({ allowedRoles, children }) => {
   const userData = JSON.parse(localStorage.getItem("userData") || "{}");
-  const authToken =
-    userData?.token || localStorage.getItem("authToken") || null;
 
-  // ⛔ Нэвтрээгүй бол login
-  if (!authToken) {
-    return <Navigate to="/login" replace />;
+  // ❌ Login хийгээгүй бол Home руу
+  if (!userData?.role) {
+    return <Navigate to="/" replace />;
   }
 
-  // ⚠️ Role тохирохгүй
-  if (allowedRoles && !allowedRoles.includes(userData?.role)) {
-    return <Navigate to="/login" replace />;
+  // ❌ Role тохирохгүй бол Home
+  if (allowedRoles && !allowedRoles.includes(userData.role)) {
+    return <Navigate to="/" replace />;
   }
 
   return children;
@@ -49,24 +48,18 @@ const Routes = () => {
     <BrowserRouter>
       <ErrorBoundary>
         <ScrollToTop />
-        <RouterRoutes>
 
-          {/* ============================
-              🌍 PUBLIC ROUTES
-          ============================ */}
+        <RouterRoutes>
+          {/* 🌍 PUBLIC */}
           <Route path="/" element={<Home />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/register/player" element={<RegisterPlayer />} />
           <Route path="/register/center" element={<RegisterCenter />} />
-          
-          {/* 👉 БИДНИЙ ТУХАЙ (public + admin) */}
           <Route path="/about" element={<About />} />
-          {/* <Route path="/rules" element={<Rules />} /> */}
-            <Route path="/rules" element={<Rules />} />
-          {/* ============================
-              👤 PLAYER ROUTES
-          ============================ */}
+          <Route path="/rules" element={<Rules />} />
+
+          {/* 👤 PLAYER */}
           <Route
             path="/gaming-center-map"
             element={
@@ -75,6 +68,7 @@ const Routes = () => {
               </ProtectedRoute>
             }
           />
+
           <Route
             path="/gaming-center-details"
             element={
@@ -83,6 +77,7 @@ const Routes = () => {
               </ProtectedRoute>
             }
           />
+
           <Route
             path="/booking-history"
             element={
@@ -91,6 +86,7 @@ const Routes = () => {
               </ProtectedRoute>
             }
           />
+
           <Route
             path="/digital-wallet"
             element={
@@ -100,9 +96,7 @@ const Routes = () => {
             }
           />
 
-          {/* ============================
-              🧑‍💻 ADMIN ROUTES
-          ============================ */}
+          {/* 🧑‍💻 ADMIN */}
           <Route
             path="/admin-dashboard"
             element={
@@ -112,9 +106,7 @@ const Routes = () => {
             }
           />
 
-          {/* ============================
-              ❌ 404
-          ============================ */}
+          {/* ❌ 404 */}
           <Route path="*" element={<NotFound />} />
         </RouterRoutes>
       </ErrorBoundary>
