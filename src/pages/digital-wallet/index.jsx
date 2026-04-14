@@ -88,7 +88,6 @@ const DigitalWallet = () => {
 
       const data = await res.json().catch(() => ({}));
       if (!res.ok || data.error) {
-        // ✅ wallet байхгүй/алдаа гарвал хуучин state үлдээхгүй
         setWalletData({
           balance: 0,
           recentChange: { amount: 0, period: "" },
@@ -125,20 +124,18 @@ const DigitalWallet = () => {
 
       const data = await res.json().catch(() => ({}));
       if (!res.ok || data.error) {
-        setTransactions([]); // ✅ хуучин гүйлгээ үлдээхгүй
+        setTransactions([]); 
         throw new Error(data.error || "Transactions error");
       }
 
       const txList = (data.transactions || []).map((tx) => ({
         id: tx.id,
         type: tx.type === "TOPUP" ? "topup" : "booking",
-        amount: tx.type === "TOPUP" ? Number(tx.amount) : -Number(tx.amount),
-        description:
-          tx.type === "TOPUP"
-            ? tx.description || t("wallet.topup")
-            : tx.description || t("gaming.session"),
+        amount: Number(tx.amount), 
+        description: tx.description || (tx.type === "TOPUP" ? t("wallet.topup") : t("gaming.session")),
         reference: tx.id,
-        date: tx.created_at,
+        date: tx.created_at, // TransactionHistory компонент дээр created_at гэж зассан бол энд created_at байх хэрэгтэй
+        created_at: tx.created_at,
         status: "completed",
         center: tx.center_name || undefined,
       }));
@@ -183,7 +180,6 @@ const DigitalWallet = () => {
         },
       }));
 
-      // ✅ дараалж шинэчлэх
       await fetchTransactions();
       setIsTopUpModalOpen(false);
     } catch (err) {
@@ -194,10 +190,9 @@ const DigitalWallet = () => {
   };
 
   // -------------------------------------------------
-  // 4. Эхлэх үед өгөгдөл татах (TOKEN солигдоход state reset)
+  // 4. Эхлэх үед өгөгдөл татах
   // -------------------------------------------------
   useEffect(() => {
-    // ✅ token байхгүй үед бүх state цэвэрлэ
     if (!token) {
       setWalletData(null);
       setTransactions([]);
@@ -206,7 +201,6 @@ const DigitalWallet = () => {
       return;
     }
 
-    // ✅ token солигдох бүрд өмнөх хэрэглэгчийн дата харагдахгүй
     setWalletData(null);
     setTransactions([]);
     setError("");
@@ -225,11 +219,10 @@ const DigitalWallet = () => {
     load();
 
     return () => controller.abort();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
   // -------------------------------------------------
-  // 5. Reservation countdown + expire
+  // 5. Reservation countdown
   // -------------------------------------------------
   useEffect(() => {
     if (!reservationPayment?.paymentDeadline) {
@@ -254,7 +247,6 @@ const DigitalWallet = () => {
     tick();
     const interval = setInterval(tick, 1000);
     return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reservationPayment?.paymentDeadline, reservationPayment?.reservationId, token]);
 
   const formatTime = (ms) => {
@@ -280,17 +272,14 @@ const DigitalWallet = () => {
 
   const payReservation = async () => {
     if (!reservationPayment?.reservationId) return;
-
     if (!walletData) {
       setError("Түрийвчийн мэдээлэл олдсонгүй.");
       return;
     }
-
     if ((timeLeftMs ?? 1) === 0) {
       setError("Төлбөр хийх хугацаа дууссан байна.");
       return;
     }
-
     if (walletData.balance < reservationPayment.totalPrice) {
       setError("Түрийвчний үлдэгдэл хүрэлцэхгүй байна.");
       return;
@@ -313,7 +302,6 @@ const DigitalWallet = () => {
         throw new Error(data.error || "Төлбөр баталгаажуулахад алдаа гарлаа.");
       }
 
-      // Wallet + tx refresh
       await Promise.all([fetchWallet(), fetchTransactions()]);
       navigate("/booking-history");
     } catch (err) {
@@ -369,14 +357,12 @@ const DigitalWallet = () => {
 
       <main className="pt-16 pb-20 md:pb-8">
         <div className="max-w-7xl mx-auto px-4 py-8">
-          {/* Error Message */}
           {error && (
             <div className="bg-red-500/15 text-red-300 border border-red-400 px-4 py-2 rounded-lg mb-4 text-sm">
               {error}
             </div>
           )}
 
-          {/* Page Header */}
           <div className="flex items-center justify-between mb-8">
             <div>
               <h1 className="text-3xl font-bold text-foreground">
@@ -503,12 +489,6 @@ const DigitalWallet = () => {
                       Баланс хүрэлцэхгүй байна. Түрийвчээ цэнэглээд дахин төлнө үү.
                     </p>
                   )}
-
-                  {timeLeftMs === 0 && (
-                    <p className="text-sm text-red-300 mt-3">
-                      Төлбөр хийх хугацаа дууссан байна. Захиалга хүчингүй болж магадгүй.
-                    </p>
-                  )}
                 </div>
               )}
 
@@ -537,7 +517,8 @@ const DigitalWallet = () => {
                     recentChange={walletData.recentChange}
                     onTopUp={() => setIsTopUpModalOpen(true)}
                   />
-                  <TransactionHistory transactions={transactions.slice(0, 5)} />
+                  {/* Overview хэсэгт бүх гүйлгээг харуулдаг болгож засав */}
+                  <TransactionHistory transactions={transactions} />
                   <SpendingAnalytics analyticsData={analyticsData} />
                 </div>
               )}
