@@ -1,3 +1,4 @@
+import ReportsPage from "./pages/reports";
 import React from "react";
 import {
   BrowserRouter,
@@ -131,7 +132,14 @@ const Routes = () => {
               </ProtectedRoute>
             }
           />
-
+            <Route
+  path="/reports"
+  element={
+    <ProtectedRoute allowedRoles={["ACCOUNTANT", "CENTER_ADMIN", "OWNER"]}>
+      <ReportsPage />
+    </ProtectedRoute>
+  }
+/>
           {/* ❌ 404 */}
           <Route path="*" element={<NotFound />} />
         </RouterRoutes>

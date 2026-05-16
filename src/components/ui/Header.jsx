@@ -126,9 +126,9 @@ const Header = () => {
     user?.username || user?.name || user?.email?.split("@")[0] || "User";
 
   const navigationItems = [
-    { label: "Discover", path: "/gaming-center-map", icon: "MapPin" },
-    { label: "My Bookings", path: "/booking-history", icon: "Calendar" },
-    { label: "Wallet", path: "/digital-wallet", icon: "Wallet" },
+    { label: "Тоглоомын төв олох", path: "/gaming-center-map", icon: "MapPin" },
+    { label: "Миний захиалгууд", path: "/booking-history", icon: "Calendar" },
+    { label: "Хэтэвч", path: "/digital-wallet", icon: "Wallet" },
   ];
 
   const unreadCount = notifications.filter((n) => !n.read).length;
@@ -349,7 +349,7 @@ const Header = () => {
                     className="w-full justify-start text-sm"
                     iconName="Wallet"
                   >
-                    Manage Wallet
+                    Хэтэвч
                   </Button>
                   <Button
                     variant="ghost"
@@ -357,7 +357,7 @@ const Header = () => {
                     className="w-full justify-start text-sm"
                     iconName="History"
                   >
-                    Booking History
+                    Захиалгын түүх
                   </Button>
                   <div className="my-1 border-t border-border" />
                   <Button
@@ -366,7 +366,7 @@ const Header = () => {
                     className="w-full justify-start text-sm text-destructive"
                     iconName="LogOut"
                   >
-                    Sign Out
+                    Системээс гарах
                   </Button>
                 </div>
               </div>

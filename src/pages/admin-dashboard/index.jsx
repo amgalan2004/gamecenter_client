@@ -2,8 +2,11 @@ import React, { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import Navbar from "../../components/Navbar";
 import { getToken, getPlatformStats } from "../../utils/authAPI";
+import { io } from "socket.io-client";
 
 const API_BASE_URL = "http://localhost:5000/api";
+// Socket холболтыг компонентын гадна эсвэл useEffect дотор нэг удаа үүсгэнэ
+const socket = io("http://localhost:5000");
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
@@ -18,7 +21,7 @@ const AdminDashboard = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [editingPcId, setEditingPcId] = useState(null);
 
-  const token = getToken(); // Энэ нь 'gc_token'-ийг авна
+  const token = getToken();
 
   const fetchAllData = useCallback(async () => {
     if (!token) {
@@ -32,7 +35,7 @@ const AdminDashboard = () => {
       setLoading(true);
       setError("");
 
-      // А. Өөрийн төвийн мэдээллийг авах (ШИНЭЧЛЭГДСЭН ЗАМ)
+      // А. Өөрийн төвийн мэдээллийг авах
       const centerRes = await fetch(`${API_BASE_URL}/centers/my-center`, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -46,19 +49,21 @@ const AdminDashboard = () => {
       setCenter(centerData);
       setForm(centerData);
 
-      // Б. PC жагсаалт (Backend: /api/pcs/:centerId ЗАМТАЙ ТУЛГАВ)
+      // Б. PC жагсаалт
       const pcsRes = await fetch(`${API_BASE_URL}/pcs/${centerData.id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (pcsRes.ok) setPcs(await pcsRes.json());
+      if (pcsRes.ok) {
+        const pcsData = await pcsRes.json();
+        setPcs(pcsData);
+      }
 
-      // В. Статистик (authAPI доторх функц)
+      // В. Статистик
       const sData = await getPlatformStats();
       setStats(sData);
 
     } catch (err) {
       console.error("Fetch Error:", err);
-      // Unexpected token '<' алдааг хэрэглэгчид ойлгомжтой харуулах
       if (err.message.includes("Unexpected token")) {
         setError("Серверээс буруу хариу ирлээ (API зам зөрсөн байж магадгүй).");
       } else {
@@ -71,12 +76,39 @@ const AdminDashboard = () => {
 
   useEffect(() => {
     fetchAllData();
+
+    // ==========================================
+    // 🌐 SOCKET.IO СОНСОГЧИД (REAL-TIME)
+    // ==========================================
+    socket.on("status-changed", (data) => {
+      console.log("Socket: Төлөв шинэчлэгдэх дохио ирлээ", data);
+      
+      // Хэрэв Backend-ээс бүх PC-ийн жагсаалтыг хамт явуулж байгаа бол
+      if (data.allPcs && Array.isArray(data.allPcs)) {
+        setPcs(data.allPcs);
+      } else {
+        // Зөвхөн ганц PC-ийн статус ирж байгаа бол
+        setPcs(prevPcs => prevPcs.map(pc => 
+          pc.id === data.pc_id ? { ...pc, status: data.status } : pc
+        ));
+      }
+    });
+
+    socket.on("finance-updated", () => {
+      console.log("Socket: Санхүүгийн мэдээлэл шинэчлэгдлээ");
+      // Статистик болон орлогыг дахин татах
+      getPlatformStats().then(data => setStats(data));
+    });
+
+    // Cleanup: Компонент устгагдах үед сонсогчдыг салгах
+    return () => {
+      socket.off("status-changed");
+      socket.off("finance-updated");
+    };
   }, [fetchAllData]);
 
-  // PC Нэмэх эсвэл Засах (ЗАМЫГ ШИНЭЧЛЭВ)
   const handlePcSubmit = async (e) => {
     e.preventDefault();
-    // Таны Backend-д одоогоор эдгээр замууд байхгүй байж магадгүй тул шалгаарай
     const url = editingPcId 
       ? `${API_BASE_URL}/pcs/update/${editingPcId}` 
       : `${API_BASE_URL}/pcs/add`;
@@ -105,7 +137,6 @@ const AdminDashboard = () => {
     }
   };
 
-  // Төвийн мэдээлэл шинэчлэх (Update зам Backend-д нэмэх шаардлагатай)
   const handleSaveCenter = async () => {
     try {
       const res = await fetch(`${API_BASE_URL}/centers/update/${center.id}`, {
@@ -129,7 +160,23 @@ const AdminDashboard = () => {
     }
   };
 
-  // ... (Рендер хийх хэсэг хэвээрээ)
+  const handleDeletePc = async (id) => {
+    if (!window.confirm("Энэ PC-ийг устгахдаа итгэлтэй байна уу?")) return;
+    try {
+      const res = await fetch(`${API_BASE_URL}/pcs/delete/${id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        setPcs(pcs.filter(p => p.id !== id));
+      } else {
+        alert("Устгаж чадсангүй");
+      }
+    } catch (err) {
+      alert("Серверийн алдаа");
+    }
+  };
+
   if (loading) return (
     <div className="min-h-screen bg-[#0f172a] flex items-center justify-center">
       <div className="text-cyan-400 animate-pulse text-xl font-bold">Уншиж байна...</div>
@@ -224,11 +271,17 @@ const AdminDashboard = () => {
                         <td className="py-4 px-2 font-bold">{pc.name} <span className="text-[10px] text-cyan-500 ml-2">[{pc.seat_number}]</span></td>
                         <td className="py-4 px-2 text-gray-400 text-xs">{pc.specs}</td>
                         <td className="py-4 px-2">
-                          <span className="text-[10px] bg-green-500/20 text-green-400 border border-green-500/30 px-2 py-1 rounded-full">{pc.status}</span>
+                          <span className={`text-[10px] border px-2 py-1 rounded-full ${
+                            pc.status === 'AVAILABLE' 
+                              ? 'bg-green-500/20 text-green-400 border-green-500/30' 
+                              : 'bg-red-500/20 text-red-400 border-red-500/30'
+                          }`}>
+                            {pc.status}
+                          </span>
                         </td>
                         <td className="py-4 px-2 text-right">
                            <button onClick={() => { setEditingPcId(pc.id); setPcForm(pc); }} className="text-blue-400 mr-4">Засах</button>
-                           <button className="text-red-400">Устгах</button>
+                           <button onClick={() => handleDeletePc(pc.id)} className="text-red-400">Устгах</button>
                         </td>
                       </tr>
                     ))}

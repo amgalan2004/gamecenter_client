@@ -28,14 +28,14 @@ const Register = () => {
         <div className="text-center mb-16 space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-700">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs font-medium uppercase tracking-wider mb-2">
             <UserPlus className="w-3 h-3" />
-            Join the movement
+            Бидэнтэй нэгдээрэй
           </div>
           <h1 className="text-4xl md:text-5xl font-black text-white tracking-tight">
-            Create Your <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-400">Account</span>
+            Бүртгэлээ<span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-400">үүсгэх</span>
           </h1>
           <p className="text-slate-400 text-lg max-w-xl mx-auto leading-relaxed">
-            Join the <span className="text-blue-400 font-medium">GameCenter Connect</span> community. 
-            Choose your path below to get started.
+            <span className="text-blue-400 font-medium">GameCenter Connect</span> ийнхонтой нэгдээрэй. Доор байгаа хэсгээс өөртөө тохирохыг нь сонгоод шууд эхлээрэй. 
+
           </p>
         </div>
 
@@ -44,8 +44,8 @@ const Register = () => {
           
           {/* Player Card */}
           <RoleCard
-            title="Player Registration"
-            description="Discover, book, and compete in gaming centers across your city."
+            title="Тоглогч бүртгүүлэх"
+            description="Хотынхоо тоглоомын төвүүдийг олж мэдээд, цагаа захиалж, өрсөлдөөрэй."
             icon={<Gamepad2 className="w-8 h-8 text-blue-400" />}
             color="blue"
             buttonText="Continue as Player"
@@ -54,8 +54,8 @@ const Register = () => {
 
           {/* Center Admin Card */}
           <RoleCard
-            title="Center Admin"
-            description="Manage your gaming hub, bookings, and players seamlessly in one place."
+            title="Тоглоомын төвийн Admin бүртгуулэх"
+            description=" Тоглоомын газрынхаа бүх захиалга, тоглогчдоо нэг дороос л амархан удирдчих."
             icon={<Building2 className="w-8 h-8 text-emerald-400" />}
             color="emerald"
             buttonText="Continue as Admin"
@@ -64,8 +64,8 @@ const Register = () => {
 
           {/* Accountant Card */}
           <RoleCard
-            title="Accountant"
-            description="Track center finances, expenses, and generate detailed financial reports."
+            title="Санхүүч бүртгүүлэх"
+            description="Төвийнхөө орлого, зарлагыг хянаад, санхүүгийн бүх тайлангаа нэг дороос гаргаад авчих"
             icon={<Wallet className="w-8 h-8 text-amber-400" />}
             color="amber"
             buttonText="Continue as Accountant"
@@ -77,12 +77,12 @@ const Register = () => {
         {/* Footer Link */}
         <div className="mt-16 text-center animate-in fade-in duration-1000 delay-500">
           <p className="text-slate-500 font-medium">
-            Already have an account?{" "}
+            Өмнө нь бүртгүүлчихсэн үү?{" "}
             <button
               onClick={() => navigate("/login")}
               className="text-blue-400 hover:text-blue-300 font-bold transition-colors ml-1 hover:underline underline-offset-4"
             >
-              Sign In
+              Нэвтрэх
             </button>
           </p>
         </div>
