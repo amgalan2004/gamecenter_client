@@ -472,7 +472,7 @@ const StatusBadge = ({ status }) => {
   return (
     <span className="px-2.5 py-1 rounded-lg text-xs font-semibold" style={{ color: s.color, background: s.bg }}>
       {s.label}
-    </span>
+    </span> 
   );
 };
 

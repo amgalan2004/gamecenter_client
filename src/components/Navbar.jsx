@@ -122,7 +122,7 @@ const Navbar = () => {
 )}
         </div>
 
-        {/* БАРУУН ТАЛ: Auth */}
+        {/* БАРУУН ТАЛ: Auth */}  
         <div className="flex items-center gap-3">
           {isAuthenticated ? (
             <div className="flex items-center gap-4">

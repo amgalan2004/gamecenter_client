@@ -31,31 +31,7 @@ const BookingTable = ({
   /* =========================
       🕒 DYNAMIC STATUS LOGIC
      ========================= */
-  const getDynamicStatus = (booking) => {
-    if (booking?.status === 'cancelled' || booking?.status === 'rejected') return booking.status;
-
-    try {
-      const timeRange = booking?.time || "";
-      const [startTimeStr, endTimeStr] = timeRange.split(' - ');
-      
-      // Date форматыг илүү бат бөх болгох
-      const datePart = booking.date.includes('T') ? booking.date.split('T')[0] : booking.date;
-      
-      const startDateTime = new Date(`${datePart}T${startTimeStr.trim()}:00`).getTime();
-      const endDateTime = new Date(`${datePart}T${endTimeStr.trim()}:00`).getTime();
-      const currentTimestamp = now.getTime();
-
-      if (currentTimestamp >= startDateTime && currentTimestamp <= endDateTime) {
-        return 'in-progress';
-      } else if (currentTimestamp > endDateTime) {
-        return 'completed';
-      } else {
-        return 'upcoming';
-      }
-    } catch (error) {
-      return booking?.status || 'upcoming';
-    }
-  };
+  const getDynamicStatus = (booking) => booking.status;
 
   const getStatusColor = (status) => {
     switch (status) {
@@ -144,7 +120,8 @@ const BookingTable = ({
             {currentData.length > 0 ? (
               currentData.map((booking) => {
                 const currentStatus = getDynamicStatus(booking);
-                const isUpcoming = currentStatus === 'upcoming';
+                const isUpcoming = currentStatus === 'upcoming' && 
+  booking.startTime && new Date(booking.startTime) > new Date();
 
                 return (
                   <tr key={booking?.id} className="hover:bg-muted/20 transition-all group">

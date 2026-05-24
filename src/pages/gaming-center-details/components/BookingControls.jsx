@@ -1,51 +1,30 @@
-// src/pages/gaming-center-details/components/BookingControls.jsx
 import React, { useEffect, useMemo, useState } from "react";
-
 import Button from "../../../components/ui/Button";
 import Input from "../../../components/ui/Input";
 import Select from "../../../components/ui/Select";
 
-// ---- token helper (Header/DigitalWallet-тэй тааруулсан) ----
-const getAuthToken = () => {
-  try {
-    const direct =
-      localStorage.getItem("token") ||
-      localStorage.getItem("authToken") ||
-      localStorage.getItem("accessToken") ||
-      localStorage.getItem("gc_token"); // ✅ нэмсэн
-
-    if (direct) return direct;
-
-    const candidates = ["userData", "user", "gc_user", "currentUser"];
-    for (const key of candidates) {
-      const raw = localStorage.getItem(key);
-      if (!raw) continue;
-
-      try {
-        const obj = JSON.parse(raw);
-        if (obj.token) return obj.token;
-        if (obj.accessToken) return obj.accessToken;
-      } catch {}
-    }
-
-    return null;
-  } catch {
-    return null;
-  }
-};
+const getAuthToken = () =>
+  localStorage.getItem("authToken") ||
+  localStorage.getItem("token") ||
+  localStorage.getItem("gc_token") || "";
 
 const API_URL = "http://localhost:5000";
 
-const BookingControls = ({ selectedSeats = [], onBookingUpdate, centerData }) => {
+const BookingControls = ({
+  selectedSeats = [],
+  onBookingUpdate,
+  centerData,
+  seatCount = 1,
+  onSeatCountChange,
+  onConfirm,
+  isSubmitting = false,
+}) => {
   const [bookingDate, setBookingDate] = useState(
     new Date().toISOString().split("T")[0]
   );
   const [startTime, setStartTime] = useState("14:00");
   const [duration, setDuration] = useState(2);
-  const [membershipType, setMembershipType] = useState("regular"); // UI-д үлдээв (өөрчлөхгүй)
-
-  // ✅ Wallet state
-  const [walletBalance, setWalletBalance] = useState(null); // null = loading
+  const [walletBalance, setWalletBalance] = useState(null);
   const [walletError, setWalletError] = useState("");
 
   const token = getAuthToken();
@@ -59,137 +38,102 @@ const BookingControls = ({ selectedSeats = [], onBookingUpdate, centerData }) =>
     { value: 8, label: "8 цаг" },
   ];
 
-  // ⚠️ Membership-ийг одоогоор зөвхөн UI-д үлдээж байна
-  // Үнэ тооцоо нь centerData.hourlyRate (₮/цаг) дээр суурилна
-  const membershipOptions = [
-    { value: "regular", label: "Regular" },
-    { value: "premium", label: "Premium" },
-    { value: "vip", label: "VIP" },
+  // ✅ Суудлын тоо сонголт
+  const seatCountOptions = [
+    { value: 1, label: "1 суудал" },
+    { value: 2, label: "2 суудал" },
+    { value: 3, label: "3 суудал" },
+    { value: 4, label: "4 суудал" },
+    { value: 5, label: "5 суудал" },
   ];
 
   const timeSlots = useMemo(() => {
     const slots = [];
     for (let hour = 9; hour <= 23; hour++) {
-      const timeString = `${hour.toString().padStart(2, "0")}:00`;
-      slots.push({ value: timeString, label: timeString });
+      const t = `${hour.toString().padStart(2, "0")}:00`;
+      slots.push({ value: t, label: t });
     }
     return slots;
   }, []);
 
-  // ✅ Үнэ тооцоо (MNT) — centerData.hourlyRate ашиглана
+  // ✅ Үнэ тооцоо
   const pricing = useMemo(() => {
-    const seatCount = selectedSeats?.length || 0;
+    const hourlyRate = Number(centerData?.hourlyRate || 0);
+    const total = hourlyRate * Number(duration) * Number(seatCount);
+    return { hourlyRate, total, seatCount: Number(seatCount) };
+  }, [centerData?.hourlyRate, duration, seatCount]);
 
-    // centerData.hourlyRate нь таны UI дээр ₮1000/цаг гэж харагдаж байсан
-    const hourlyRateMnt = Number(centerData?.hourlyRate || 0);
-
-    const subtotal = hourlyRateMnt * Number(duration || 0) * seatCount;
-
-    // Хэрэв татвар/хураамж хэрэггүй бол 0 байлга
-    const tax = 0;
-    const serviceFee = 0;
-
-    const total = subtotal + tax + serviceFee;
-
+  // ✅ startDateTime, endDateTime тооцоо
+  const { startDateTime, endDateTime } = useMemo(() => {
+    if (!bookingDate || !startTime) return {};
+    const [h, m] = startTime.split(":").map(Number);
+    const start = new Date(bookingDate);
+    start.setHours(h, m, 0, 0);
+    const end = new Date(start.getTime() + Number(duration) * 3600000);
     return {
-      hourlyRateMnt,
-      subtotal,
-      tax,
-      serviceFee,
-      total,
-      seatCount,
+      startDateTime: start.toISOString().slice(0, 19).replace("T", " "),
+      endDateTime: end.toISOString().slice(0, 19).replace("T", " "),
     };
-  }, [centerData?.hourlyRate, duration, selectedSeats]);
+  }, [bookingDate, startTime, duration]);
 
-  // ✅ wallet татах (token олдохгүй бол 0 биш, null/0-оор ялгана)
+  // Wallet татах
   useEffect(() => {
     const controller = new AbortController();
-
-    const loadWallet = async () => {
+    const load = async () => {
       try {
-        setWalletError("");
-
-        if (!token) {
-          setWalletBalance(0);
-          return;
-        }
-
-        setWalletBalance(null); // loading
-
+        if (!token) { setWalletBalance(0); return; }
+        setWalletBalance(null);
         const res = await fetch(`${API_URL}/api/wallet/me`, {
           headers: { Authorization: `Bearer ${token}` },
           signal: controller.signal,
         });
-
         const data = await res.json().catch(() => ({}));
-        if (!res.ok || data.error) {
-          throw new Error(data.error || "Wallet fetch error");
-        }
-
+        if (!res.ok) throw new Error(data.error || "Wallet error");
         setWalletBalance(Number(data.wallet?.balance || 0));
       } catch (e) {
         if (e?.name === "AbortError") return;
         setWalletBalance(0);
-        setWalletError(e?.message || "Wallet error");
+        setWalletError(e?.message || "");
       }
     };
-
-    loadWallet();
+    load();
     return () => controller.abort();
   }, [token]);
 
-  // ✅ Parent рүү дамжуулах (pricing.total нь MNT тоо болсон)
+  // Parent-д мэдэгдэнэ
   useEffect(() => {
-    onBookingUpdate?.({
-      date: bookingDate,
-      startTime,
-      duration,
-      membershipType,
-      pricing: {
-        subtotal: pricing.subtotal,
-        tax: pricing.tax,
-        serviceFee: pricing.serviceFee,
-        total: pricing.total,
-        hourlyRate: pricing.hourlyRateMnt,
-        seatCount: pricing.seatCount,
-      },
-      walletBalance,
-    });
-  }, [
-    bookingDate,
+  onBookingUpdate?.({
+    date: bookingDate,
     startTime,
     duration,
-    membershipType,
+    seatCount,           // ← энэ prop-оос авч байна уу?
+    startDateTime,
+    endDateTime,
+    totalPrice: pricing.total,
     pricing,
     walletBalance,
-    onBookingUpdate,
-  ]);
+  });
+}, [bookingDate, startTime, duration, seatCount, pricing, walletBalance, startDateTime, endDateTime]);
 
-  const isValidBooking =
-    (selectedSeats?.length || 0) > 0 && bookingDate && startTime && duration;
-
-  // ✅ Wallet шалгалт (бүгд MNT)
-  const totalToPay = Number(pricing?.total || 0);
-  const hasWalletInfo = walletBalance !== null;
-  const isEnoughBalance = hasWalletInfo ? Number(walletBalance) >= totalToPay : false;
-  const missingAmount = hasWalletInfo
-    ? Math.max(0, totalToPay - Number(walletBalance))
-    : 0;
+  const totalToPay = pricing.total;
+  const isEnough = walletBalance !== null && walletBalance >= totalToPay;
+  const missing = walletBalance !== null ? Math.max(0, totalToPay - walletBalance) : 0;
+  const isValid = bookingDate && startTime && duration && seatCount > 0;
 
   return (
     <div className="bg-card rounded-lg border border-border p-6">
       <h2 className="text-xl font-semibold text-foreground mb-6">
-        Тоглоомын суудал захиалах
+        Суудал захиалах
       </h2>
 
-      <div className="space-y-6">
-        {/* Date and Time Selection */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="space-y-5">
+        {/* Огноо + Цаг */}
+        <div className="grid grid-cols-2 gap-4">
           <Input
             label="Огноо"
             type="date"
             value={bookingDate}
-            onChange={(e) => setBookingDate(e?.target?.value)}
+            onChange={(e) => setBookingDate(e.target.value)}
             min={new Date().toISOString().split("T")[0]}
             required
           />
@@ -202,165 +146,98 @@ const BookingControls = ({ selectedSeats = [], onBookingUpdate, centerData }) =>
           />
         </div>
 
-        {/* Duration and Membership */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Хугацаа + Суудлын тоо */}
+        <div className="grid grid-cols-2 gap-4">
           <Select
             label="Үргэлжлэх хугацаа"
             options={durationOptions}
             value={duration}
-            onChange={setDuration}
+            onChange={(v) => setDuration(Number(v))}
             required
           />
+          {/* ✅ Суудлын тоо */}
           <Select
-            label="Төрөл"
-            options={membershipOptions}
-            value={membershipType}
-            onChange={setMembershipType}
+            label="Суудлын тоо"
+            options={seatCountOptions}
+            value={seatCount}
+            onChange={(v) => onSeatCountChange?.(Number(v))}
             required
           />
         </div>
 
-        {/* Selected Seats Summary */}
-        {(selectedSeats?.length || 0) > 0 && (
-          <div className="p-4 bg-muted/30 rounded-lg">
-            <div className="flex items-center justify-between mb-2">
-              <span className="font-medium text-foreground">Сонгосон суудал</span>
-              <span className="text-sm text-muted-foreground">
-                {selectedSeats.length} суудал
-              </span>
-            </div>
+        {/* Сонгосон суудлууд */}
+        {selectedSeats.length > 0 && (
+          <div className="p-3 bg-muted/30 rounded-lg">
+            <p className="text-xs text-muted-foreground mb-2">
+              Сонгосон суудлууд ({selectedSeats.length}/{seatCount}):
+            </p>
             <div className="flex flex-wrap gap-2">
-              {selectedSeats.map((seatId) => (
-                <div
-                  key={seatId}
-                  className="px-3 py-1 bg-accent/20 text-accent rounded-full text-sm font-medium"
-                >
-                  #{seatId}
-                </div>
+              {selectedSeats.map((id) => (
+                <span key={id} className="px-2 py-1 bg-accent/20 text-accent rounded-full text-xs font-medium">
+                  #{id}
+                </span>
               ))}
             </div>
+            {selectedSeats.length < seatCount && (
+              <p className="text-xs text-yellow-400 mt-2">
+                ⚠️ {seatCount - selectedSeats.length} суудал дутуу байна. Зүүн талаас сонгоно уу эсвэл автомат сонгогдоно.
+              </p>
+            )}
           </div>
         )}
 
-        {/* Pricing Breakdown */}
-        <div className="border-t border-border pt-6">
-          <h3 className="font-semibold text-foreground mb-4">
-            Захиалгын мэдээлэл
-          </h3>
-
-          <div className="space-y-3">
-            <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">
-                Тариф ({pricing.seatCount} суудал × {duration} цаг)
-              </span>
-              <span className="font-medium">
-                ₮{Number(pricing.hourlyRateMnt || 0).toLocaleString()} / цаг
-              </span>
-            </div>
-
-            <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">Дүн</span>
-              <span className="font-medium">
-                ₮{Number(pricing.subtotal || 0).toLocaleString()}
-              </span>
-            </div>
-
-            {/* Хэрэв tax/serviceFee ашиглах бол доорхийг үлдээнэ */}
-            {Number(pricing.serviceFee || 0) > 0 && (
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Үйлчилгээний хураамж</span>
-                <span className="font-medium">
-                  ₮{Number(pricing.serviceFee || 0).toLocaleString()}
-                </span>
-              </div>
-            )}
-            {Number(pricing.tax || 0) > 0 && (
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Татвар</span>
-                <span className="font-medium">
-                  ₮{Number(pricing.tax || 0).toLocaleString()}
-                </span>
-              </div>
-            )}
-
-            <div className="border-t border-border pt-3">
-              <div className="flex justify-between">
-                <span className="font-semibold text-foreground">Нийт төлбөр</span>
-                <span className="font-bold text-xl text-accent">
-                  ₮{Number(pricing.total || 0).toLocaleString()}
-                </span>
-              </div>
-            </div>
+        {/* Захиалгын мэдээлэл */}
+        <div className="border border-border rounded-xl p-4 space-y-2">
+          <h3 className="font-semibold text-sm mb-3">Захиалгын мэдээлэл</h3>
+          <Row label="Огноо:" value={bookingDate ? new Date(bookingDate).toLocaleDateString("mn-MN", { weekday: "long", year: "numeric", month: "long", day: "numeric" }) : "—"} />
+          <Row label="Цаг:" value={startTime && duration ? `${startTime} – ${endDateTime?.slice(11, 16) || ""}` : "—"} />
+          <Row label="Үргэлжлэх:" value={`${duration} цаг`} />
+          <Row label="Суудал:" value={`${seatCount} суудал`} />
+          <Row label="Тариф:" value={`₮${pricing.hourlyRate.toLocaleString()} / цаг / суудал`} />
+          <div className="border-t border-border pt-2 mt-2 flex justify-between">
+            <span className="font-bold">Нийт төлбөр:</span>
+            <span className="font-bold text-lg text-green-400">₮{totalToPay.toLocaleString()}</span>
           </div>
         </div>
 
-        {/* Wallet section */}
-        <div className="border-t border-border pt-6">
-          <div className="flex items-center justify-between mb-2">
-            <span className="font-semibold text-foreground">
-              Хэтэвчний үлдэгдэл
-            </span>
-            <span className="font-bold">
-              {walletBalance === null
-                ? "..."
-                : `₮${Number(walletBalance).toLocaleString()}`}
-            </span>
+        {/* Хэтэвч */}
+        <div className="flex items-center justify-between p-3 bg-muted/20 rounded-xl border border-border">
+          <span className="text-sm font-medium flex items-center gap-2">
+            🪙 Хэтэвчний үлдэгдэл
+          </span>
+          <span className="font-bold">
+            {walletBalance === null ? "..." : `₮${walletBalance.toLocaleString()}`}
+          </span>
+        </div>
+
+        {walletBalance !== null && !isEnough && totalToPay > 0 && (
+          <div className="bg-red-500/10 border border-red-400/30 text-red-300 rounded-xl p-3 text-sm">
+            Үлдэгдэл хүрэлцэхгүй байна. Нэмэлтээр <b>₮{missing.toLocaleString()}</b> цэнэглэнэ үү.
           </div>
+        )}
 
-          {walletError && (
-            <div className="text-xs text-red-300 mb-2">
-              Wallet error: {walletError}
-            </div>
-          )}
+        {/* Захиалах товч */}
+        <button
+          onClick={onConfirm}
+          disabled={!isValid || walletBalance === null || !isEnough || isSubmitting}
+          className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-all"
+        >
+          {isSubmitting ? "Захиалж байна..." : `🗓 Захиалга баталгаажуулах`}
+        </button>
 
-          {walletBalance !== null && !isEnoughBalance && (
-            <div className="bg-red-500/10 border border-red-400/40 text-red-200 rounded-lg p-3 text-sm">
-              Үлдэгдэл хүрэлцэхгүй байна. Нэмэлтээр{" "}
-              <b>₮{Number(missingAmount).toLocaleString()}</b> цэнэглэх
-              шаардлагатай.
-              <div className="mt-2 underline cursor-pointer">
-                Хэтэвч цэнэглэх →
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Booking Actions */}
-        <div className="space-y-3">
-          <Button
-            variant="default"
-            fullWidth
-            disabled={
-              !isValidBooking ||
-              walletBalance === null || // loading
-              !isEnoughBalance // үлдэгдэл хүрэлцэхгүй
-            }
-            iconName="CreditCard"
-            iconPosition="left"
-            className="h-12"
-          >
-            Захиалга баталгаажуулах — ₮{Number(pricing.total || 0).toLocaleString()}
-          </Button>
-
-          <div className="grid grid-cols-2 gap-3">
-            <Button variant="outline" iconName="Heart" iconPosition="left">
-              Дараа хадгалах
-            </Button>
-            <Button variant="outline" iconName="Share" iconPosition="left">
-              Хуваалцах
-            </Button>
-          </div>
-        </div>
-
-        {/* Additional Info */}
-        <div className="text-xs text-muted-foreground space-y-1">
-          <p>• 2 цагийн өмнө цуцлах боломжтой</p>
-          <p>• Хоцорвол хугацаа багасч тооцогдоно</p>
-          <p>• Төхөөрөмж ашиглалт багтсан</p>
-        </div>
+        <p className="text-xs text-muted-foreground text-center">
+          • Цагийн эхлэхийн өмнө цуцлах боломжтой
+        </p>
       </div>
     </div>
   );
 };
+
+const Row = ({ label, value }) => (
+  <div className="flex justify-between text-sm">
+    <span className="text-muted-foreground">{label}</span>
+    <span className="font-medium text-right">{value}</span>
+  </div>
+);
 
 export default BookingControls;
